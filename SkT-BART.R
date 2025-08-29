@@ -192,8 +192,10 @@ bart_skewt = function(y,
     gamma2  = mean(hat$gamma2)
   }
   
+  if(isTRUE(sparse) & i > floor(TotIter*0.1)){
+    s = update_s(var_count, p, 1)
+  }
   cat('\n')
-  
   results <- list(trees = tree_store,
                   sigma2 = sigma2_store*y_sd^2,
                   y_hat = y_hat_store*y_sd + y_mean,
@@ -213,3 +215,4 @@ bart_skewt = function(y,
   class(results) <- "sktbart"
   return(results)
 } # End main function
+
