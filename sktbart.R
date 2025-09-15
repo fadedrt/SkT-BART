@@ -42,7 +42,7 @@
 # nburn = 100
 # npost = 100
 # nthin = 1
-# lambda1 = runif(250, min = 0.1, max = 1)
+# lambda = runif(length(y), min = 0.1, max = 1)
 sktbart = function(y,
                       x,
                       sparse = FALSE,
@@ -51,7 +51,7 @@ sktbart = function(y,
                       gamma2 = 1,
                       alpha = 0.95,
                       beta = 2,
-                      lambda1 = runif(length(y), min = 0, max = 1),
+                      lambda = runif(length(y), min = 0, max = 1),
                       d = 0.1,
                       v = 1,
                       mu_mu = 0,
@@ -81,7 +81,7 @@ sktbart = function(y,
   var_count_store  = matrix(0, ncol = p, nrow = store_size)
   s_prob_store     = matrix(0, ncol = p, nrow = store_size)
   tree_fits_store  = matrix(0, ncol = ntrees, nrow = n)
-  lambda1_store    = matrix(NA, ncol = n, nrow = store_size)
+  lambda_store    = matrix(NA, ncol = n, nrow = store_size)
   v_store          = rep(NA, store_size)
   
   # ---------- Standardize response variable ----------
@@ -112,7 +112,7 @@ sktbart = function(y,
       bart_store[curr, ]    = yhat_bart
       var_count_store[curr, ] = var_count
       s_prob_store[curr, ]  = s
-      lambda1_store[curr, ] = lambda1
+      lambda_store[curr, ] = lambda
       v_store[curr]         = v
       gamma2_store[curr]    = gamma2
     }
@@ -133,7 +133,7 @@ sktbart = function(y,
       l_old = tree_full_skewt(
         tree = curr_trees[[j]],
         R = current_partial_residuals,
-        lambda1 = lambda1,
+        lambda = lambda,
         sigma2 = sigma2,
         sigma2_mu = sigma2_mu,
         gamma2 = gamma2,
@@ -144,7 +144,7 @@ sktbart = function(y,
       l_new = tree_full_skewt(
         tree = new_trees[[j]],
         R = current_partial_residuals,
-        lambda1 = lambda1,
+        lambda = lambda,
         sigma2 = sigma2,
         sigma2_mu = sigma2_mu,
         gamma2 = gamma2,
@@ -167,7 +167,7 @@ sktbart = function(y,
       curr_trees[[j]] = simulate_mu_skew(
         tree = curr_trees[[j]],
         R = current_partial_residuals,
-        lambda1 = lambda1,
+        lambda = lambda,
         gamma2 = gamma2,
         sigma2 = sigma2,
         sigma2_mu = sigma2_mu,
@@ -185,10 +185,10 @@ sktbart = function(y,
     residuals = y_scale - y_hat
     
     # Update skew-t parameters
-    hat = skewt_pro2_single(residuals, gamma2 = gamma2, v = v, d = d, alpha = alpha, beta = beta, lambda1 = lambda1)
+    hat = skewt_pro2_single(residuals, gamma2 = gamma2, v = v, d = d, alpha = alpha, beta = beta, lambda = lambda)
     v       = mean(hat$v)
     sigma2  = mean(hat$sigma2)
-    lambda1 = hat$lambda1
+    lambda = hat$lambda
     gamma2  = mean(hat$gamma2)
   }
   
@@ -210,11 +210,12 @@ sktbart = function(y,
                   y_sd = y_sd,
                   var_count_store = var_count_store,
                   s = s_prob_store,
-                  lambda1=lambda1_store
+                  lambda=lambda_store
   )
   class(results) <- "sktbart"
   return(results)
 } # End main function
+
 
 
 
