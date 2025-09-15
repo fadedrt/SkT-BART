@@ -185,7 +185,7 @@ sktbart = function(y,
     residuals = y_scale - y_hat
     
     # Update skew-t parameters
-    hat = skewt_para_single(residuals, gamma2 = gamma2, v = v, d = d, alpha = alpha, beta = beta, lambda = lambda)
+    hat = skewt_param_single(residuals, gamma2 = gamma2, v = v, d = d, alpha = alpha, beta = beta, lambda = lambda)
     v       = mean(hat$v)
     sigma2  = mean(hat$sigma2)
     lambda = hat$lambda
@@ -215,6 +215,7 @@ sktbart = function(y,
   class(results) <- "sktbart"
   return(results)
 } # End main function
+
 
 
 
