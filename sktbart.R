@@ -164,7 +164,7 @@ sktbart = function(y,
       }
       
       # Update terminal node parameters
-      curr_trees[[j]] = simulate_mu_skew(
+      curr_trees[[j]] = simulate_mu_skewt(
         tree = curr_trees[[j]],
         R = current_partial_residuals,
         lambda = lambda,
@@ -215,6 +215,7 @@ sktbart = function(y,
   class(results) <- "sktbart"
   return(results)
 } # End main function
+
 
 
 
