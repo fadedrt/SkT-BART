@@ -32,34 +32,34 @@ get_tree_prior = function(tree, alpha, beta, common_vars) {
 
   }
 
-skewt_pro2_single <- function(x, gamma2, v, d = 0.15, alpha = 2, beta = 1, lambda1) {
+skewt_pro2_single <- function(x, gamma2, v, d = 0.15, alpha = 2, beta = 1, lambda) {
   n = length(x)
   
   # 指示函数：根据正负调整尺度
   indicator = ifelse(x >= 0, 1 / gamma2, gamma2)
   
   # 计算 S 用于 sigma2 更新
-  S = sum(lambda1 * x^2 * indicator)
+  S = sum(lambda * x^2 * indicator)
   
   sigma2 = update_sigma2(S = S, n = n)
-  v      = update_v_skewt(n = n, d = d, lambda1 = lambda1)
-  lambda1 = update_lambda1_skewt(n, x, v, gamma2, sigma2 = sigma2)
-  gamma2  = update_gamma2_skewt(n, lambda1, x, sigma2 = sigma2, a = alpha, b = beta)
+  v      = update_v_skewt(n = n, d = d, lambda = lambda)
+  lambda = update_lambda_skewt(n, x, v, gamma2, sigma2 = sigma2)
+  gamma2  = update_gamma2_skewt(n, lambda, x, sigma2 = sigma2, a = alpha, b = beta)
   
   return(list(
     v = v,
     gamma2 = gamma2,
-    lambda1 = lambda1,
+    lambda = lambda,
     sigma2 = sigma2
   ))
 }
 
-update_gamma2_skewt <- function(n, lambda1, residuals, sigma2, a, b) {
+update_gamma2_skewt <- function(n, lambda, residuals, sigma2, a, b) {
   # 对数目标密度函数，用于 gamma2 的采样
   log_density <- function(gamma2) {
     gamma2 <- abs(gamma2)
     indicate <- ifelse(residuals >= 0, 1 / gamma2, gamma2)
-    S <- sum(lambda1 * residuals^2 * indicate / sigma2)
+    S <- sum(lambda * residuals^2 * indicate / sigma2)
     log_prior <- (n / 2 + a - 1) * log(gamma2) - n * log(gamma2 + 1)
     log_likelihood <- -S / 2 - b * gamma2
     return(log_prior + log_likelihood)
@@ -81,8 +81,8 @@ update_gamma2_skewt <- function(n, lambda1, residuals, sigma2, a, b) {
   return(mean(r$sim_vals))  # 返回平均值作为更新值
 }
 
-update_lambda1_skewt <- function(n, residuals, v, gamma2, sigma2) {
-  lambda1 <- numeric(n)
+update_lambda_skewt <- function(n, residuals, v, gamma2, sigma2) {
+  lambda <- numeric(n)
   for (i in seq_len(n)) {
     res_sq <- residuals[i]^2
     if (residuals[i] >= 0) {
@@ -90,13 +90,13 @@ update_lambda1_skewt <- function(n, residuals, v, gamma2, sigma2) {
     } else {
       rate <- v / 2 + res_sq * gamma2 / (2 * sigma2)
     }
-    lambda1[i] <- rgamma(1, shape = (v + 1) / 2, rate = rate)
+    lambda[i] <- rgamma(1, shape = (v + 1) / 2, rate = rate)
   }
-  return(lambda1)
+  return(lambda)
 }
 
-update_v_skewt <- function(n, d, lambda1){
-  eta = sum(lambda1 - log(lambda1))/2+d
+update_v_skewt <- function(n, d, lambda){
+  eta = sum(lambda - log(lambda))/2+d
   T=n
   # 定义方程以求解 x*
   f <- function(x) {
@@ -151,12 +151,12 @@ update_sigma2 <- function(S, n) {
   return(1 / rgamma(1, shape = n / 2, rate = S / 2))
 }
 
-tree_full_skewt <- function(tree, R, lambda1, sigma2, sigma2_mu, gamma2 = gamma2, 
+tree_full_skewt <- function(tree, R, lambda, sigma2, sigma2_mu, gamma2 = gamma2, 
                             common_vars, aux_factor_var) {
   # 计算当前树的 log full conditional 概率，用于 MCMC 样本接受判断
   # tree: 一棵单独的树结构
   # R: 当前残差向量
-  # lambda1: 每个观测对应的 latent weight（gamma分布样本）
+  # lambda: 每个观测对应的 latent weight（gamma分布样本）
   # sigma2: 误差方差
   # sigma2_mu: 树结构中 mu 的先验方差
   # gamma2: 偏态参数
@@ -201,13 +201,13 @@ tree_full_skewt <- function(tree, R, lambda1, sigma2, sigma2_mu, gamma2 = gamma2
   C_i <- 1 / gamma2 * pnorm(R / sigma2_mu) + gamma2 * (1 - pnorm(R / sigma2_mu))
   
   # 对每个节点分组求和
-  S0 <- C_i * lambda1 * R^2
+  S0 <- C_i * lambda * R^2
   S_j2 <- tapply(S0, tree$node_indices, sum)
   
-  S1 <- lambda1 * R * C_i
+  S1 <- lambda * R * C_i
   S_j1 <- tapply(S1, tree$node_indices, sum)
   
-  M_j <- tapply(lambda1, tree$node_indices, sum)
+  M_j <- tapply(lambda, tree$node_indices, sum)
   
   # -------------------------
   # Step 5: 计算对数后验概率
@@ -255,7 +255,7 @@ draw_mu_by_mh <- function(R, lambda, gamma2, sigma2, sigma2_mu,
   return(mu)
 }
 
-simulate_mu_skew = function(tree, R, lambda1, gamma2, sigma2, sigma2_mu, 
+simulate_mu_skew = function(tree, R, lambda, gamma2, sigma2, sigma2_mu, 
                             common_vars, aux_factor_var) {
   # Simulate mu values for a given tree
   # First find which rows are terminal nodes
@@ -289,7 +289,7 @@ simulate_mu_skew = function(tree, R, lambda1, gamma2, sigma2, sigma2_mu,
   for (i in 1:length(nj)) {
     ind <- which(tree$node_indices == sort(unique(tree$node_indices))[i])
     mu[i] <- draw_mu_by_mh(
-      R = R[ind], lambda = lambda1[ind], gamma2 = gamma2, sigma2 = sigma2, 
+      R = R[ind], lambda = lambda[ind], gamma2 = gamma2, sigma2 = sigma2, 
       sigma2_mu = sigma2_mu, init_mu = median(R), proposal_sd = mad(R) / 2
     )
   }
@@ -300,6 +300,7 @@ simulate_mu_skew = function(tree, R, lambda1, gamma2, sigma2, sigma2_mu,
   tree$tree_matrix[which_terminal_no_double_split, 'mu'] = 0  # set to zero the terminal node with no interaction
   return(tree)
 }
+
 
 
 
