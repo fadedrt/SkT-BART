@@ -3,18 +3,18 @@
 #' A dataset containing periodontal disease status and other attributes of 288 subjects
 #'
 #' \itemize{
-#'   \item subPD. the mean periodontal pocket depth (PPD), mm
-#'   \item subCAL. the mean clinical attachment level, mm
-#'   \item Age. age in years
-#'   \item Female. 1 = female, 0 = male
-#'   \item Bmi. body mass index, kg/m^2
-#'   \item Smoker. Smoking status; 1 = smoker, 0 = non-smoker
-#'   \item Hba1cfull. glycated haemoglobin level, %
+#'   \item X. x-axis spatial coordinate within the Montesinho park map; integer 1–9
+#'   \item Y. y-axis spatial coordinate within the Montesinho park map; integer 2–9
+#'   \item ISI. ISI index from the FWI system; continuous, range 0.0–56.1
+#'   \item temp. temperature, Celsius degrees; continuous, range 2.2–33.3
+#'   \item RH. relative humidity, %; integer, range 15–100
+#'   \item wind. wind speed, km/h; continuous, range 0.4–9.4
+#'   \item rain. outside rain, mm/m2; integer, range 0.0–6.4
+#'   \item FFMC. Fine Fuel Moisture Code index from the FWI system; continuous, range 18.7–96.2
 #' }
 #'
 #' @docType data
 #' @keywords datasets
-#' @name GAAD
+#' @name FFMC
 #' @usage data(GAAD)
 #' @format A data frame with 288 rows and 7 variables:
-"GAAD"
