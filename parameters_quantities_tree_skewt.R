@@ -32,7 +32,7 @@ get_tree_prior = function(tree, alpha, beta, common_vars) {
 
   }
 
-skewt_pro2_single <- function(x, gamma2, v, d = 0.15, alpha = 2, beta = 1, lambda) {
+skewt_param_single <- function(x, gamma2, v, d = 0.15, alpha = 2, beta = 1, lambda) {
   n = length(x)
   
   # Indicator function: adjust scale based on sign
@@ -306,6 +306,7 @@ simulate_mu_skewt = function(tree, R, lambda, gamma2, sigma2, sigma2_mu,
   tree$tree_matrix[which_terminal_no_double_split, 'mu'] = 0  # set to zero the terminal node with no interaction
   return(tree)
 }
+
 
 
 
