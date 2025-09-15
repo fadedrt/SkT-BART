@@ -51,7 +51,7 @@ sktbart = function(y,
                       gamma2 = 1,
                       alpha = 0.95,
                       beta = 2,
-                      lambda1 = runif(250, min = 0.1, max = 1),
+                      lambda1 = runif(length(y), min = 0, max = 1),
                       d = 0.1,
                       v = 1,
                       mu_mu = 0,
@@ -215,5 +215,6 @@ sktbart = function(y,
   class(results) <- "sktbart"
   return(results)
 } # End main function
+
 
 
