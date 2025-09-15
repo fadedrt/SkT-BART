@@ -66,7 +66,7 @@ update_gamma2_skewt <- function(n, lambda, residuals, sigma2, a, b) {
   }
   
   # 估计 logf 的 lambda 参数
-  lambda <- find_lambda_one_d(log_density)
+  lambda1 <- find_lambda_one_d(log_density)
   
   # 使用 ru 包进行贝叶斯采样
   r <- ru(
@@ -74,7 +74,7 @@ update_gamma2_skewt <- function(n, lambda, residuals, sigma2, a, b) {
     d = 1,
     n = 50,
     trans = "BC",
-    lambda = lambda,
+    lambda = lambda1,
     lower = 0
   )
   
@@ -300,6 +300,7 @@ simulate_mu_skew = function(tree, R, lambda, gamma2, sigma2, sigma2_mu,
   tree$tree_matrix[which_terminal_no_double_split, 'mu'] = 0  # set to zero the terminal node with no interaction
   return(tree)
 }
+
 
 
 
