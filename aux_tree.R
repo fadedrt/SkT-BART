@@ -98,56 +98,56 @@ get_children = function(tree_mat, parent) {
 
 # Sample function ----------------------------------------------------------
 
-resample <- function(x, ...) x[sample.int(length(x), size=1), ...]
+# Resample a single element from a vector
+resample <- function(x, ...) x[sample.int(length(x), size = 1), ...]
 
-update_s  <- function(var_count, p, alpha_s) {
-  shape   <- alpha_s/p + var_count
-  temp    <- rgamma(length(shape), shape, rate=1)
-  temp/sum(temp)
+# Update Dirichlet weights for splitting probabilities
+update_s_  <- function(var_count, p, alpha_s) {
+  shape <- alpha_s / p + var_count
+  temp  <- rgamma(length(shape), shape, rate = 1)
+  temp / sum(temp)
 }
 
-get_number_distinct_cov <- function(tree){
-  
-  # Select the rows that correspond to internal nodes
+# Count the number of distinct covariates used in internal nodes
+get_number_distinct_cov <- function(tree) {
+  # Select the rows corresponding to internal nodes
   which_terminal = which(tree$tree_matrix[,'terminal'] == 0)
-  # Get the covariates that are used to define the splitting rules
+  # Get unique covariates used in splitting
   num_distinct_cov = length(unique(tree$tree_matrix[which_terminal,'split_variable']))
-  
   return(num_distinct_cov)
 }
 
-sample_move = function(curr_tree, i, nburn){
-  
-  if (nrow(curr_tree$tree_matrix) == 1 || i < max(floor(0.1*nburn), 10)) {
+# Decide which type of move to make in tree MCMC
+sample_move = function(curr_tree, i, nburn) {
+  if (nrow(curr_tree$tree_matrix) == 1 || i < max(floor(0.1 * nburn), 10)) {
     type = 'grow'
   } else {
     type = sample(c('grow', 'prune', 'change'), 1)
   }
   return(type)
 }
-get_ancestors = function(tree){
-  
+
+# Get ancestors for terminal nodes
+get_ancestors = function(tree) {
   save_ancestor = NULL
   which_terminal = which(tree$tree_matrix[,'terminal'] == 1)
   
   if(nrow(tree$tree_matrix) == 1) {
-    save_ancestor = cbind(terminal = NULL,
-                          ancestor = NULL)
+    save_ancestor = cbind(terminal = NULL, ancestor = NULL)
   } else {
     for (k in seq_len(length(which_terminal))) {
-      get_parent = as.numeric(as.character(tree$tree_matrix[which_terminal[k], 'parent'])) # get the 1st parent
-      get_split_var = as.character(tree$tree_matrix[get_parent, 'split_variable']) # then, get the covariate associated to the row of the parent
+      get_parent = as.numeric(as.character(tree$tree_matrix[which_terminal[k], 'parent']))
+      get_split_var = as.character(tree$tree_matrix[get_parent, 'split_variable'])
       
       save_ancestor = rbind(save_ancestor,
                             cbind(terminal = which_terminal[k],
-                                  # parent   = get_parent,
                                   ancestor = get_split_var))
-      while (get_parent > 1){
-        get_parent = as.numeric(as.character(tree$tree_matrix[get_parent,'parent'])) # then, get the subsequent parent
-        get_split_var = as.character(tree$tree_matrix[get_parent, 'split_variable']) # then, get the covariate associated to the row of the new parent
+      
+      while (get_parent > 1) {
+        get_parent = as.numeric(as.character(tree$tree_matrix[get_parent,'parent']))
+        get_split_var = as.character(tree$tree_matrix[get_parent, 'split_variable'])
         save_ancestor = rbind(save_ancestor,
                               cbind(terminal = which_terminal[k],
-                                    # parent   = get_parent,
                                     ancestor = get_split_var))
       }
     }
@@ -158,15 +158,14 @@ get_ancestors = function(tree){
   return(save_ancestor)
 }
 
-get_ancestors_internal = function(tree){
+# Get ancestors for internal nodes
+get_ancestors_internal = function(tree) {
   save_ancestor = NULL
   tree = tree$tree_matrix
   which_internal = which(tree[,'terminal'] == 0)
   
-  
   if(nrow(tree) == 1) {
-    save_ancestor = cbind(internal = NULL,
-                          ancestor = NULL)
+    save_ancestor = cbind(internal = NULL, ancestor = NULL)
   } else {
     for (k in length(which_internal):1) {
       internal_node = which_internal[k]
@@ -177,7 +176,8 @@ get_ancestors_internal = function(tree){
                             cbind(internal = internal_node,
                                   parent   = parent,
                                   split_var = get_split_var))
-      while (is.na(parent) == FALSE && parent > 0) {
+      
+      while (!is.na(parent) && parent > 0) {
         get_split_var = tree[parent, 'split_variable']
         parent = tree[parent, 'parent']
         save_ancestor = rbind(save_ancestor,
@@ -187,6 +187,5 @@ get_ancestors_internal = function(tree){
       }
     }
   }
-  return(save_ancestor[,,drop=FALSE])
-  
+  return(save_ancestor[,,drop = FALSE])
 }
