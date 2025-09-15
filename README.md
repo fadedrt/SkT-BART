@@ -88,10 +88,10 @@ calculate_lpml <- function(y, x, npost = 100, trees, sigma2_store, gamma2_store,
 # Simulate training and test datasets
 # -------------------------
 set.seed(123)
-c(x, y, mu, v, gamma) %<-% sim_fried(250, 5, 1, 1, 1)
+c(x, y, mu, v, gamma) %<-% sim_fried(250, 5, v = 1, sigma = 1, gamma = 1)
 
 set.seed(123)
-c(test_x, test_y, test_mu, v, gamma) %<-% sim_fried(100, 5, 1, 1, 1)
+c(test_x, test_y, test_mu, v, gamma) %<-% sim_fried(100, 5, v = 1, sigma = 1, gamma = 1)
 
 # Fit sktBART model
 sktbart_fit = sktbart(y, x, ntrees = 50, nburn = 2500, npost = 2500, lambda1 = runif(length(y), min = 0, max = 1))
