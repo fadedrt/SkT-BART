@@ -1,3 +1,37 @@
+get_tree_prior = function(tree, alpha, beta, common_vars) {
+
+  # First find the level of each node, then the depth is the maximum of the level
+  level = rep(NA, nrow(tree$tree_matrix))
+  level[1] = 0 # First row always level 0
+
+  # Escape quickly if tree is just a stump
+  if(nrow(tree$tree_matrix) == 1) {
+    return(log(1 - alpha)) # Tree depth is 0
+  }
+
+  for(i in 2:nrow(tree$tree_matrix)) {
+    # Find the current parent
+    curr_parent = as.numeric(tree$tree_matrix[i,'parent'])
+    # This child must have a level one greater than it's current parent
+    level[i] = level[curr_parent] + 1
+  }
+
+  # Only compute for the internal nodes
+  internal_nodes = which(as.numeric(tree$tree_matrix[,'terminal']) == 0)
+  log_prior = 0
+  for(i in seq_along(internal_nodes)) {
+    log_prior = log_prior + log(alpha) - beta * log1p(level[internal_nodes[i]])
+  }
+  # Now add on terminal nodes
+  terminal_nodes = which(as.numeric(tree$tree_matrix[,'terminal']) == 1)
+  for(i in seq_along(terminal_nodes)) {
+    log_prior = log_prior + log(1 - alpha * ((1 + level[terminal_nodes[i]])^(-beta)))
+  }
+
+  return(log_prior)
+
+  }
+
 skewt_pro2_single <- function(x, gamma2, v, d = 0.15, alpha = 2, beta = 1, lambda1) {
   n = length(x)
   
@@ -19,7 +53,6 @@ skewt_pro2_single <- function(x, gamma2, v, d = 0.15, alpha = 2, beta = 1, lambd
     sigma2 = sigma2
   ))
 }
-
 
 update_gamma2_skewt <- function(n, lambda1, residuals, sigma2, a, b) {
   # 对数目标密度函数，用于 gamma2 的采样
@@ -48,7 +81,6 @@ update_gamma2_skewt <- function(n, lambda1, residuals, sigma2, a, b) {
   return(mean(r$sim_vals))  # 返回平均值作为更新值
 }
 
-
 update_lambda1_skewt <- function(n, residuals, v, gamma2, sigma2) {
   lambda1 <- numeric(n)
   for (i in seq_len(n)) {
@@ -62,7 +94,6 @@ update_lambda1_skewt <- function(n, residuals, v, gamma2, sigma2) {
   }
   return(lambda1)
 }
-
 
 update_v_skewt <- function(n, d, lambda1) {
   eta <- sum(lambda1 - log(lambda1)) / 2 + d
@@ -105,11 +136,9 @@ update_v_skewt <- function(n, d, lambda1) {
   return(ars_sample(1))
 }
 
-
 update_sigma2 <- function(S, n) {
   return(1 / rgamma(1, shape = n / 2, rate = S / 2))
 }
-
 
 tree_full_skewt <- function(tree, R, lambda1, sigma2, sigma2_mu, gamma2 = gamma2, 
                             common_vars, aux_factor_var) {
@@ -180,7 +209,6 @@ tree_full_skewt <- function(tree, R, lambda1, sigma2, sigma2_mu, gamma2 = gamma2
   return(log_post)
 }
 
-
 draw_mu_by_mh <- function(R, lambda, gamma2, sigma2, sigma2_mu,
                           init_mu = median(R),
                           proposal_sd = mad(R) / 2,
@@ -215,7 +243,6 @@ draw_mu_by_mh <- function(R, lambda, gamma2, sigma2, sigma2_mu,
   
   return(mu)
 }
-
 
 simulate_mu_skew <- function(tree, R, lambda1, gamma2, sigma2, sigma2_mu,
                              common_vars, aux_factor_var) {
@@ -271,4 +298,5 @@ simulate_mu_skew <- function(tree, R, lambda1, gamma2, sigma2, sigma2_mu,
   tree$tree_matrix[invalid_terminals, 'mu'] <- 0  # 直接来自根节点的“禁止交互”终端节点
   
   return(tree)
+
 }
