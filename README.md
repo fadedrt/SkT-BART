@@ -94,7 +94,7 @@ set.seed(123)
 c(test_x, test_y, test_mu, v, gamma) %<-% sim_fried(100, 5, v = 1, sigma = 1, gamma = 1)
 
 # Fit sktBART model
-sktbart_fit = sktbart(y, x, ntrees = 50, nburn = 2500, npost = 2500, lambda1 = runif(length(y), min = 0, max = 1))
+sktbart_fit = sktbart(y, x, ntrees = 50, nburn = 2500, npost = 2500)
 
 # Compute estimated parameters
 v_hat = mean(sktbart_fit$v)
