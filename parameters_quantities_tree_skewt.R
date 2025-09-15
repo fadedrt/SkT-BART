@@ -255,60 +255,51 @@ draw_mu_by_mh <- function(R, lambda, gamma2, sigma2, sigma2_mu,
   return(mu)
 }
 
-simulate_mu_skew <- function(tree, R, lambda1, gamma2, sigma2, sigma2_mu,
-                             common_vars, aux_factor_var) {
-  # 为树中的 terminal node 根据偏态误差结构采样 mu 值
-  
-  terminal_nodes <- which(tree$tree_matrix[, 'terminal'] == 1)
-  
-  # 检查 terminal node 是否含有不允许的双重分裂路径
+simulate_mu_skew = function(tree, R, lambda1, gamma2, sigma2, sigma2_mu, 
+                            common_vars, aux_factor_var) {
+  # Simulate mu values for a given tree
+  # First find which rows are terminal nodes
+  which_terminal = which(tree$tree_matrix[, 'terminal'] == 1)
+  # Identify those terminals that don't have a double split on g and e
   if (nrow(tree$tree_matrix) != 1) {
-    terminal_ancestors <- get_ancestors(tree)
-    ancestor_table <- table(terminal_ancestors[, 1], terminal_ancestors[, 2])
-    
-    invalid_terminals <- NULL
-    for (k in 1:nrow(ancestor_table)) {
-      ancestor_vars <- names(ancestor_table[k, ])[ancestor_table[k, ] != 0]
-      is_invalid <- any(sapply(aux_factor_var, function(x) all(ancestor_vars %in% x)))
-      if (is_invalid) {
-        invalid_terminals[k] <- rownames(ancestor_table)[k]
+    terminal_ancestors = get_ancestors(tree)  # get the ancestor for all terminal nodes
+    aux_table = table(terminal_ancestors[, 1], terminal_ancestors[, 2])  # create a table
+    which_terminal_no_double_split = NULL
+    for (k in 1:nrow(aux_table)) {
+      split_var_ancestors = names(aux_table[k, ])[aux_table[k, ] != 0]
+      invalid_ancestors = any(unlist(
+        lapply(aux_factor_var, function(x) all(split_var_ancestors %in% x))
+      ))
+      if (invalid_ancestors == TRUE) {
+        which_terminal_no_double_split[k] = rownames(aux_table)[k]
       }
     }
-    
-    invalid_terminals <- as.numeric(invalid_terminals[!is.na(invalid_terminals)])
+    # terminals with only one ancestor where the ancestor is common to X1 and X2
+    which_terminal_no_double_split = as.numeric(
+      which_terminal_no_double_split[!is.na(which_terminal_no_double_split)]
+    )
   } else {
-    invalid_terminals <- 0  # stump 情况
+    which_terminal_no_double_split = 0  # stump
   }
-  
-  # 针对不允许交互的 terminal，设置 mu 的先验方差为 0
-  sigma2_mu_vec <- rep(sigma2_mu, length(terminal_nodes))
-  sigma2_mu_vec[terminal_nodes %in% invalid_terminals] <- 0
-  
-  node_sizes <- as.numeric(tree$tree_matrix[terminal_nodes, 'node_size'])
-  
-  # 对每个 terminal node 独立采样 mu
-  mu <- numeric(length(node_sizes))
-  unique_indices <- sort(unique(tree$node_indices))  # 避免多次排序
-  
-  for (i in seq_along(node_sizes)) {
-    idx <- which(tree$node_indices == unique_indices[i])
+  # set up sigma2_mu = 0 for all which_terminal_no_double_split
+  sigma2_mu_aux = rep(sigma2_mu, length(which_terminal))
+  sigma2_mu_aux[which(which_terminal %in% which_terminal_no_double_split)] = 0
+  nj = as.numeric(tree$tree_matrix[which_terminal, 'node_size'])
+  mu <- c()
+  for (i in 1:length(nj)) {
+    ind <- which(tree$node_indices == sort(unique(tree$node_indices))[i])
     mu[i] <- draw_mu_by_mh(
-      R = R[idx],
-      lambda = lambda1[idx],
-      gamma2 = gamma2,
-      sigma2 = sigma2,
-      sigma2_mu = sigma2_mu_vec[i],
-      init_mu = median(R[idx]),
-      proposal_sd = mad(R[idx]) / 2
+      R = R[ind], lambda = lambda1[ind], gamma2 = gamma2, sigma2 = sigma2, 
+      sigma2_mu = sigma2_mu, init_mu = median(R), proposal_sd = mad(R) / 2
     )
   }
-  
-  # 清除旧 mu，填入新的 mu 值
-  tree$tree_matrix[, 'mu'] <- NA
-  tree$tree_matrix[terminal_nodes, 'mu'] <- mu
-  tree$tree_matrix[invalid_terminals, 'mu'] <- 0  # 直接来自根节点的“禁止交互”终端节点
-  
+  # Wipe all the old mus out for other nodes
+  tree$tree_matrix[, 'mu'] = NA
+  # Put in just the ones that are useful
+  tree$tree_matrix[which_terminal, 'mu'] = mu
+  tree$tree_matrix[which_terminal_no_double_split, 'mu'] = 0  # set to zero the terminal node with no interaction
   return(tree)
-
 }
+
+
 
