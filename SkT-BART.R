@@ -43,7 +43,7 @@
 # npost = 100
 # nthin = 1
 # lambda1 = runif(250, min = 0.1, max = 1)
-bart_skewt = function(y,
+sktbart = function(y,
                       x,
                       sparse = FALSE,
                       ntrees = 50,
@@ -215,4 +215,5 @@ bart_skewt = function(y,
   class(results) <- "sktbart"
   return(results)
 } # End main function
+
 
