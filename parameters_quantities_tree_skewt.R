@@ -255,7 +255,7 @@ draw_mu_by_mh <- function(R, lambda, gamma2, sigma2, sigma2_mu,
   return(mu)
 }
 
-simulate_mu_skew = function(tree, R, lambda, gamma2, sigma2, sigma2_mu, 
+simulate_mu_skewt = function(tree, R, lambda, gamma2, sigma2, sigma2_mu, 
                             common_vars, aux_factor_var) {
   # Simulate mu values for a given tree
   # First find which rows are terminal nodes
@@ -300,6 +300,7 @@ simulate_mu_skew = function(tree, R, lambda, gamma2, sigma2, sigma2_mu,
   tree$tree_matrix[which_terminal_no_double_split, 'mu'] = 0  # set to zero the terminal node with no interaction
   return(tree)
 }
+
 
 
 
