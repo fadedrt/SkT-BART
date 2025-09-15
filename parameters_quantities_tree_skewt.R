@@ -95,41 +95,52 @@ update_lambda1_skewt <- function(n, residuals, v, gamma2, sigma2) {
   return(lambda1)
 }
 
-update_v_skewt <- function(n, d, lambda1) {
-  eta <- sum(lambda1 - log(lambda1)) / 2 + d
-  T <- n
-  
-  # 方程用于解出 x_star
+update_v_skewt <- function(n, d, lambda1){
+  eta = sum(lambda1 - log(lambda1))/2+d
+  T=n
+  # 定义方程以求解 x*
   f <- function(x) {
     (T / 2) * (log(x / 2) + 1 - digamma(x / 2)) + (1 / x) - eta
   }
-  
-  # 求解 x_star
-  solution <- uniroot(f, interval = c(1e-8, 100))
+  # 使用 nleqslv 求解 x*
+  solution <- uniroot(f, interval = c(1e-10, 100))
   x_star <- solution$root
-  alpha <- 1 / x_star
+  alpha <- 1 / x_star  # 设置候选分布参数
   
-  # 目标分布核函数（非标准化）
-  target_log_density <- function(x) {
-    (T * x / 2) * log(x / 2) - T * lgamma(x / 2) - eta * x
+  # 定义目标分布的核函数
+  target_density <- function(x) {
+    (x/2)^(T*x/2) * exp(-T * lgamma(x/2)) * exp(-eta * x)
   }
   
-  # 接受概率函数（与 proposal 比例）
+  # 定义候选分布
+  proposal_density <- function(x) {
+    alpha * exp(-alpha * x)
+  }
+  
+  # 定义接受概率函数
   Q <- function(x) {
-    exp(target_log_density(x) - target_log_density(x_star) + (x_star - x) * eta - 1 + x / x_star)
+    exp((T*x/2) * log(x/2) - T * lgamma(x/2)- (T*x_star/2) * log(x_star/2) + T * lgamma(x_star/2)+ (x_star-x ) * eta-1+x/x_star)
   }
   
-  # 接受-拒绝采样
+  # 接受-拒绝采样函数
   ars_sample <- function(n) {
     samples <- numeric(n)
     accepted <- 0
+    
     while (accepted < n) {
+      # 从候选分布中采样
       x <- rexp(1, rate = alpha)
-      if (runif(1) < Q(x)) {
+      
+      # 计算接受概率
+      prob <- Q(x)
+      
+      # 接受-拒绝判断
+      if (runif(1) < prob) {
         accepted <- accepted + 1
         samples[accepted] <- x
       }
     }
+    
     return(samples)
   }
   
@@ -300,3 +311,4 @@ simulate_mu_skew <- function(tree, R, lambda1, gamma2, sigma2, sigma2_mu,
   return(tree)
 
 }
+
