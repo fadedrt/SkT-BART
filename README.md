@@ -111,7 +111,7 @@ if (v_hat > 1) {
 
 # Generate predictions
 c(f_hat_train, f_hat_test, f_hat_train_mean, f_hat_test_mean) %<-% 
-  prediction(x, y, test_x, test_y, npost = 2500, trees = sktbart_fit)
+  prediction(x, y, test_x, test_y, npost = 2500, trees = sktbart_fit$trees)
 
 # -------------------------
 # Evaluation metrics
