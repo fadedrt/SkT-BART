@@ -22,7 +22,7 @@
 #' @importFrom stats rgamma rexp dnorm sd rchisq rnorm pnorm as.formula terms xtabs lm var median
 #' @importFrom truncnorm rtruncnorm
 #' @importFrom dbarts makeModelMatrixFromDataFrame
-#' @importFrom revdbayes ru
+#' @importFrom rust ru
 #' @export
 #'
 #' @examples
@@ -30,9 +30,9 @@
 #' # n <- 100; p <- 5
 #' # x <- matrix(runif(n * p), n, p)
 #' # y <- sin(pi * x[,1] * x[,2]) + rnorm(n)
-#' # model <- bart_skewt(y, x, nburn = 100, npost = 100)
+#' # model <- sktbart(y, x, nburn = 100, npost = 100)
 #'
-bart_skewt <- function(y,
+sktbart <- function(y,
                                x,
                                sparse = FALSE,
                                ntrees = 50,
