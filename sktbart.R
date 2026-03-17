@@ -32,25 +32,26 @@
 #' # y <- sin(pi * x[,1] * x[,2]) + rnorm(n)
 #' # model <- sktbart(y, x, nburn = 100, npost = 100)
 #'
-sktbart <- function(y,
-                               x,
-                               sparse = FALSE,
-                               ntrees = 50,
-                               node_min_size = 5,
-                               gamma2 = 1,
-                               alpha = 0.95,
-                               beta = 2,
-                               lambda = NULL,
-                               d = 0.1,
-                               v = 30,
-                               mu_mu = 0,
-                               sigma2_mu = NULL,
-                               sigma2 = 1,
-                               b = 0.5,
-                               nburn = 1000,
-                               npost = 1000,
-                               nthin = 1,
-                               sigma_alpha = 1.5
+sktbart <- function(
+    y,
+    x,
+    sparse = FALSE,
+    ntrees = 50,
+    node_min_size = 5,
+    gamma2 = 1,
+    alpha = 0.95,
+    beta = 2,
+    lambda = NULL,
+    d = 0.1,
+    v = 30,
+    mu_mu = 0,
+    sigma2_mu = NULL,
+    sigma2 = 1,
+    b = 0.5,
+    nburn = 1000,
+    npost = 1000,
+    nthin = 1,
+    sigma_alpha = 1.5
 ) {
   # --- Hyperparameter Initialization ---
   if (is.null(sigma2_mu)) {
