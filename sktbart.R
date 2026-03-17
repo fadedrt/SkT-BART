@@ -32,7 +32,7 @@
 #' f_x <- 10 * sin(pi * x[,1] * x[,2]) + 20 * (x[,3] - 0.5)^2 + 10 * x[,4] + 5 * x[,5]
 #' y <- f_x + rnorm(n, sd = 1.0)
 #' 
-#' model <- sktbart(y, x, nburn = 500, npost = 500)
+#' model <- sktbart(y, x, nburn = 2500, npost = 2500)
 #'
 sktbart <- function(
     y,
