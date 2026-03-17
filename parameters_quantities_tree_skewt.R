@@ -94,14 +94,179 @@ update_lambda_skewt <- function(n, residuals, v, gamma2, sigma2) {
   return(rgamma(n, shape = (v + 1) / 2, rate = rates))
 }
 
-#' Update Latent Weights (lambda) - Layered Representation of t-distribution
-update_lambda_skewt <- function(n, residuals, v, gamma2, sigma2) {
-  # Vectorized calculation for efficiency
-  # Based on the conditional Gamma distribution of the Skew-t scale mixture
-  rates <- (v / 2) + (residuals^2 / (2 * sigma2)) * ifelse(residuals >= 0, 1/gamma2, gamma2)
+update_v_skewt <- function(n, d, lambda1) {
+  # Pre-compute constants
+  eta <- sum(lambda1 - log(lambda1)) / 2 + d
+  n_obs <- n
   
-  return(rgamma(n, shape = (v + 1) / 2, rate = rates))
+  # Define the function to solve for x_star (optimal proposal parameter)
+  target_root_fn <- function(x) {
+    (n_obs / 2) * (log(x / 2) + 1 - digamma(x / 2)) + (1 / x) - eta
+  }
+  
+  # Solve for x_star using uniroot within a safe range
+  f_lower <- target_root_fn(1e-10)
+  f_upper <- target_root_fn(100)
+  
+  if (is.nan(f_lower) || is.nan(f_upper) || f_lower * f_upper > 0) {
+    x_star <- 5
+  } else {
+    x_star <- uniroot(target_root_fn, c(1e-10, 100))$root
+  }
+  
+  # Set the proposal distribution parameter
+  alpha <- 1 / x_star
+  
+  # Define the log-acceptance ratio function Q(x)
+  # Derived from target_density / proposal_density normalized by the value at x_star
+  calc_acceptance_prob <- function(x) {
+    val <- (n_obs * x / 2) * log(x / 2) - 
+           n_obs * lgamma(x / 2) - 
+           (n_obs * x_star / 2) * log(x_star / 2) + 
+           n_obs * lgamma(x_star / 2) + 
+           (x_star - x) * eta - 1 + x / x_star
+    return(exp(val))
+  }
+  
+  # Accept-Reject Sampling implementation
+  ars_sample <- function(n_samples) {
+    samples <- numeric(n_samples)
+    accepted <- 0
+    
+    while (accepted < n_samples) {
+      # Draw from exponential proposal distribution
+      x_cand <- rexp(1, rate = alpha)
+      
+      # Calculate acceptance probability
+      prob <- calc_acceptance_prob(x_cand)
+      
+      # Acceptance decision
+      if (runif(1) < prob) {
+        accepted <- accepted + 1
+        samples[accepted] <- x_cand
+      }
+    }
+    
+    return(samples)
+  }
+  
+  # Return a single sample for the Gibbs step
+  return(ars_sample(1))
 }
+
+
+
+
+#' Laplace Approximation for Non-Exponential Family Marginal Likelihood
+tree_full_skewt_laplace <- function(tree, R, lambda, sigma2, sigma2_mu, gamma2, 
+                                    common_vars, aux_factor_var) {
+  
+  # -----------------------------------------------------------------------
+  # Step 1: Identify all terminal nodes (leaves)
+  # -----------------------------------------------------------------------
+  terminal_nodes <- as.numeric(which(tree$tree_matrix[, 'terminal'] == 1))
+  
+  # -----------------------------------------------------------------------
+  # Step 2: Identify invalid nodes based on factor constraints
+  # -----------------------------------------------------------------------
+  if (nrow(tree$tree_matrix) != 1) {
+    terminal_ancestors <- get_ancestors(tree)
+    ancestor_table <- table(terminal_ancestors[, 1], terminal_ancestors[, 2])
+    
+    terminals_invalid <- NULL
+    for (k in 1:nrow(ancestor_table)) {
+      ancestor_vars <- names(ancestor_table[k, ])[ancestor_table[k, ] != 0]
+      is_invalid <- any(sapply(aux_factor_var, function(x) all(ancestor_vars %in% x)))
+      if (is_invalid) {
+        terminals_invalid[k] <- rownames(ancestor_table)[k]
+      }
+    }
+    terminals_invalid <- as.numeric(terminals_invalid[!is.na(terminals_invalid)])
+  } else {
+    terminals_invalid <- 0
+  }
+  
+  # -----------------------------------------------------------------------
+  # Step 3: Create named sigma2_mu vector to handle ID mapping
+  # -----------------------------------------------------------------------
+  sigma2_mu_named <- rep(sigma2_mu, length(terminal_nodes))
+  names(sigma2_mu_named) <- as.character(terminal_nodes)
+  
+  if (length(terminals_invalid) > 0 && any(terminals_invalid != 0)) {
+    sigma2_mu_named[as.character(terminals_invalid)] <- 0
+  }
+  
+  leaf_ids <- as.character(tree$node_indices)
+  
+  # -----------------------------------------------------------------------
+  # Step 4: Laplace Approximation - IRLS to find the local posterior mode
+  # -----------------------------------------------------------------------
+  # Initialize mu predictions for each node to 0
+  mu_hat <- rep(0, length(R))  
+  
+  # Iteratively find the mode with adaptive convergence check
+  tol <- 1e-4
+  max_iter <- 10  # Safe upper bound for iterations
+  
+  for (iter in 1:max_iter) {
+    mu_old <- mu_hat # Store previous state
+    
+    # Calculate asymmetric weights based on the current mu_hat
+    C_i_iter <- ifelse(R > mu_hat, 1 / gamma2, gamma2)
+    W_i_iter <- C_i_iter * lambda
+    
+    # Compute leaf-wise sufficient statistics (weighted counts and residuals)
+    S_W_leaf  <- tapply(W_i_iter, leaf_ids, sum)
+    S_WR_leaf <- tapply(W_i_iter * R, leaf_ids, sum)
+    
+    # Align prior variances
+    sigma2_mu_j <- sigma2_mu_named[names(S_W_leaf)]
+    
+    # mu_mode = S_WR / (S_W + sigma2 / sigma2_mu)
+    denom_mu <- S_W_leaf + (sigma2 / sigma2_mu_j)
+    denom_mu[sigma2_mu_j == 0] <- Inf # Handle invalid or stump nodes
+    
+    mu_mode_leaf <- S_WR_leaf / denom_mu
+    
+    # Map updated modes back to the full sample vector
+    mu_hat <- as.numeric(mu_mode_leaf[leaf_ids])
+    
+    # Convergence check: break if the maximum update is below tolerance
+    if (max(abs(mu_hat - mu_old), na.rm = TRUE) < tol) {
+      break
+    }
+  }
+  
+  # -----------------------------------------------------------------------
+  # Step 5: Finalize sufficient statistics based on converged mode
+  # -----------------------------------------------------------------------
+  C_i <- ifelse(R > mu_hat, 1 / gamma2, gamma2)
+  W_i <- C_i * lambda
+  
+  S_W   <- tapply(W_i, leaf_ids, sum)       # Corresponds to M_j (including C_i)
+  S_WR  <- tapply(W_i * R, leaf_ids, sum)   # Corresponds to S_j1
+  S_WR2 <- tapply(W_i * R^2, leaf_ids, sum) # Corresponds to S_j2
+  
+  sigma_mu_j_final <- sigma2_mu_named[names(S_W)]
+  
+  # -----------------------------------------------------------------------
+  # Step 6: Calculate log-marginal likelihood (Laplace integral solution)
+  # -----------------------------------------------------------------------
+  denom <- S_W * sigma_mu_j_final + sigma2
+  
+  # Three components of the analytical log-posterior
+  term1 <- log(sigma2) - log(denom) 
+  term2 <- (sigma_mu_j_final * S_WR^2) / (sigma2 * denom)
+  term3 <- - S_WR2 / sigma2  # R^2 term is mandatory due to inter-leaf C_i variance
+  
+  log_post <- 0.5 * sum(term1 + term2 + term3)
+  
+  return(log_post)
+}
+
+
+
+
 
 #' Direct Laplace Approximate Sampling for Leaf Node Parameters
 #' 
