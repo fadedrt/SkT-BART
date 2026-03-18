@@ -53,38 +53,31 @@ update_sigma2_prior <- function(S, n, sigma_alpha, sigma_beta) {
 }
 
 #' Update Skewness Parameter gamma2 using Ratio-of-Uniforms Sampling
+
 update_gamma2_skewt <- function(n, lambda, residuals, sigma2, a, b) {
-  
-  # Log-posterior density function for gamma2
-  log_density <- function(g2) {
-    g2 <- abs(g2)
-    if(g2 <= 0) return(-1e10)
-    
-    indicator <- ifelse(residuals >= 0, 1 / g2, g2)
-    S_scaled <- sum(lambda * residuals^2 * indicator / sigma2)
-    
-    # Combined Log-Prior + Log-Likelihood
-    log_prior <- (n / 2 + a - 1) * log(g2) - n * log(g2 + 1)
-    log_likelihood <- -S_scaled / 2 - b * g2
-    
+  log_density <- function(gamma2) {
+    gamma2 <- abs(gamma2)
+    indicate <- ifelse(residuals >= 0, 1 / gamma2, gamma2)
+    S <- sum(lambda * residuals^2 * indicate / sigma2)
+    log_prior <- (n / 2 + a - 1) * log(gamma2) - n * log(gamma2 + 1)
+    log_likelihood <- -S / 2 - b * gamma2
     return(log_prior + log_likelihood)
   }
   
-  # Estimate lambda parameter for ru algorithm
-  l_param <- find_lambda_one_d(log_density)
+  lambda1 <- find_lambda_one_d(log_density)
   
-  # Perform Ratio-of-Uniforms sampling
-  r_sample <- ru(
+  r <- ru(
     logf = log_density,
     d = 1,
-    n = 1, 
+    n = 1,
     trans = "BC",
-    lambda = l_param,
+    lambda = lambda1,
     lower = 0
   )
   
-  return(as.numeric(r_sample$sim_vals))
+  return(mean(r$sim_vals)) 
 }
+
 
 #' Update Latent Weights (lambda)
 update_lambda_skewt <- function(n, residuals, v, gamma2, sigma2) {
