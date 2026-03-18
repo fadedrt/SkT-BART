@@ -39,7 +39,7 @@ gamma_hat <- sqrt(mean(sktbart_fit$gamma2))
 
 # Generate predictions
 c(f_hat_train, f_hat_test, f_hat_train_mean, f_hat_test_mean) %<-% 
-  prediction(x, y, test_x, test_y, npost = 2500, trees = sktbart_fit$trees)
+  prediction(x, y, test_x, npost = 2500, trees = sktbart_fit$trees)
 
 # Generate residual shift based on estimated parameters
 if (v_hat > 1) {
@@ -59,8 +59,7 @@ final_predictions <- f_hat_test_mean + r_shift
 cat("sktBART RMSE:", round(sqrt(mean((final_predictions - test_y)^2)), 2), "\n")
 cat("sktBART MAE:", round(mean(abs(final_predictions - test_y)), 2), "\n")
 cat("sktBART MAPE:", round(mean(abs(final_predictions - test_y) / abs(test_y)) * 100, 2), "%\n")
-cat("sktBART LPML:", calculate_lpml(y = y, x = x, npost = 2500, 
-                                    trees = sktbart_fit$trees, 
+cat("sktBART LPML:", calculate_lpml_skewt(y = y, sktbart_fit$bart_hat,
                                     sigma2_store = sktbart_fit$sigma2, 
                                     gamma2_store = sktbart_fit$gamma2, 
                                     v_store = sktbart_fit$v), "\n")
