@@ -42,9 +42,9 @@ c(f_hat_train, f_hat_test, f_hat_train_mean, f_hat_test_mean) %<-%
   prediction(x, y, test_x, npost = 2500, trees = sktbart_fit$trees)
 
 # Generate residual shift based on estimated parameters
-set.seed(123)
 if (v_hat > 1) {
   # Use the median of the sampled skewed errors for shifting
+set.seed(123)
   r_shift <- median(sigma_hat * rskt(10000, v_hat, gamma_hat))
 } else {
   # When degrees of freedom <= 1, expectation does not exist
