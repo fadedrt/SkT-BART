@@ -86,47 +86,49 @@ update_lambda_skewt <- function(n, residuals, v, gamma2, sigma2) {
   return(rgamma(n, shape = (v + 1) / 2, rate = rates))
 }
 
-#' Update Degrees of Freedom (v) via Accept-Reject Sampling
-update_v_skewt <- function(n, d, lambda1) {
-  eta <- sum(lambda1 - log(lambda1)) / 2 + d
-  n_obs <- n
+
+update_v_skewt <- function(n, d, lambda1){
+  eta = sum(lambda1 - log(lambda1))/2+d
+  T=n
+  f <- function(x) {
+    (T / 2) * (log(x / 2) + 1 - digamma(x / 2)) + (1 / x) - eta
+  }
+  f_lower = f(1e-10)
+  f_upper = f(100)
   
-  # Solve for the optimal proposal parameter (x_star)
-  target_root_fn <- function(x) {
-    (n_obs / 2) * (log(x / 2) + 1 - digamma(x / 2)) + (1 / x) - eta
+  if(is.nan(f_lower) || is.nan(f_upper) || f_lower*f_upper>0){
+    x_star = 5
+  }else{
+    x_star = uniroot(f,c(1e-10,100))$root
+  }
+  alpha <- 1 / x_star  
+  target_density <- function(x) {
+    (x/2)^(T*x/2) * exp(-T * lgamma(x/2)) * exp(-eta * x)
   }
   
-  f_lower <- target_root_fn(1e-10)
-  f_upper <- target_root_fn(100)
-  
-  if (is.nan(f_lower) || is.nan(f_upper) || f_lower * f_upper > 0) {
-    x_star <- 5
-  } else {
-    x_star <- uniroot(target_root_fn, c(1e-10, 100))$root
+  proposal_density <- function(x) {
+    alpha * exp(-alpha * x)
   }
   
-  alpha <- 1 / x_star
-  
-  calc_acceptance_prob <- function(x) {
-    val <- (n_obs * x / 2) * log(x / 2) - 
-           n_obs * lgamma(x / 2) - 
-           (n_obs * x_star / 2) * log(x_star / 2) + 
-           n_obs * lgamma(x_star / 2) + 
-           (x_star - x) * eta - 1 + x / x_star
-    return(exp(val))
+  Q <- function(x) {
+    exp((T*x/2) * log(x/2) - T * lgamma(x/2)- (T*x_star/2) * log(x_star/2) + T * lgamma(x_star/2)+ (x_star-x ) * eta-1+x/x_star)
   }
   
-  ars_sample <- function(n_samples) {
-    samples <- numeric(n_samples)
+  ars_sample <- function(n) {
+    samples <- numeric(n)
     accepted <- 0
-    while (accepted < n_samples) {
-      x_cand <- rexp(1, rate = alpha)
-      prob <- calc_acceptance_prob(x_cand)
+    
+    while (accepted < n) {
+      x <- rexp(1, rate = alpha)
+      
+      prob <- Q(x)
+      
       if (runif(1) < prob) {
         accepted <- accepted + 1
-        samples[accepted] <- x_cand
+        samples[accepted] <- x
       }
     }
+    
     return(samples)
   }
   
