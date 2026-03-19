@@ -469,3 +469,37 @@ swap_tree = function(X, y, curr_tree, node_min_size) {
   return(new_tree)
   
 } # End of swap_tree function
+
+get_tree_prior = function(tree, alpha, beta, common_vars) {
+  
+  # First find the level of each node, then the depth is the maximum of the level
+  level = rep(NA, nrow(tree$tree_matrix))
+  level[1] = 0 # First row always level 0
+  
+  # Escape quickly if tree is just a stump
+  if(nrow(tree$tree_matrix) == 1) {
+    return(log(1 - alpha)) # Tree depth is 0
+  }
+  
+  for(i in 2:nrow(tree$tree_matrix)) {
+    # Find the current parent
+    curr_parent = as.numeric(tree$tree_matrix[i,'parent'])
+    # This child must have a level one greater than it's current parent
+    level[i] = level[curr_parent] + 1
+  }
+  
+  # Only compute for the internal nodes
+  internal_nodes = which(as.numeric(tree$tree_matrix[,'terminal']) == 0)
+  log_prior = 0
+  for(i in seq_along(internal_nodes)) {
+    log_prior = log_prior + log(alpha) - beta * log1p(level[internal_nodes[i]])
+  }
+  # Now add on terminal nodes
+  terminal_nodes = which(as.numeric(tree$tree_matrix[,'terminal']) == 1)
+  for(i in seq_along(terminal_nodes)) {
+    log_prior = log_prior + log(1 - alpha * ((1 + level[terminal_nodes[i]])^(-beta)))
+  }
+  
+  return(log_prior)
+  
+}
