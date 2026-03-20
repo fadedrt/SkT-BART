@@ -88,6 +88,8 @@ update_lambda_skewt <- function(n, residuals, v, gamma2, sigma2) {
 
 
 update_v_skewt <- function(n, d, lambda1){
+  # Use Laplace-based mode-finding for the degrees of freedom (v).
+  # The mode x_star serves as the proposal center for Rejection Sampling.
   eta = sum(lambda1 - log(lambda1))/2+d
   T=n
   f <- function(x) {
@@ -95,7 +97,9 @@ update_v_skewt <- function(n, d, lambda1){
   }
   f_lower = f(1e-10)
   f_upper = f(100)
-  
+  # Numerical stability check: if the log-posterior is too flat or non-convex
+  # at the boundaries, we use a robust empirical prior mode (v = 5).
+  # This ensures MCMC stability in early iterations or with sparse data.
   if(is.nan(f_lower) || is.nan(f_upper) || f_lower*f_upper>0){
     x_star = 5
   }else{
