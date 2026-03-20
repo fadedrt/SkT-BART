@@ -1,3 +1,25 @@
+# ==============================================================================
+# C++ Acceleration Backend for Skew-t BART (SkTBART)
+# ==============================================================================
+# Description:
+# This script defines the high-performance C++ backend for the SkTBART model
+# utilizing the Rcpp framework. It offloads computationally intensive bottleneck 
+# tasks—such as tree topology traversals, data routing, and Iteratively Reweighted 
+# Least Squares (IRLS) loops for Laplace approximations—from R to compiled C++.
+#
+# Performance Impact:
+# By bypassing R's memory allocation and loop overheads, this module dramatically 
+# accelerates MCMC sampling. This optimization is critical for scaling the algorithm 
+# to handle high-dimensional, large-scale industrial datasets (e.g., semiconductor 
+# manufacturing process control, chemical-mechanical planarization (CMP) polishing 
+# liquid metrology, and real-time yield prediction).
+# ==============================================================================
+
+library(Rcpp)
+
+# ------------------------------------------------------------------------------
+# 1. Tree Routing and Data Allocation Backend
+# ------------------------------------------------------------------------------
 cppFunction('
 List fill_tree_details_cpp(NumericMatrix tree_matrix, NumericMatrix X) {
     int n_obs = X.nrow();
@@ -6,6 +28,7 @@ List fill_tree_details_cpp(NumericMatrix tree_matrix, NumericMatrix X) {
     NumericMatrix new_tree_matrix = clone(tree_matrix);
     IntegerVector node_indices(n_obs, 1); 
     
+    // Traverse the tree structure to route observations to appropriate nodes
     for(int i = 1; i < n_nodes; ++i) {
         int curr_parent = new_tree_matrix(i, 3) - 1; 
         int split_var = new_tree_matrix(curr_parent, 4) - 1; 
@@ -38,8 +61,9 @@ List fill_tree_details_cpp(NumericMatrix tree_matrix, NumericMatrix X) {
 ')
 
 
-
-
+# ------------------------------------------------------------------------------
+# 2. Marginal Likelihood Evaluation (Laplace Approximation)
+# ------------------------------------------------------------------------------
 cppFunction('
 double laplace_irls_cpp(NumericVector R, 
                         NumericVector lambda, 
@@ -52,7 +76,7 @@ double laplace_irls_cpp(NumericVector R,
     int N = R.size();
     int L = unique_leaf_ids.size();
     
-    // 建立 叶子节点ID 到 数组索引 的映射字典，方便快速累加
+    // Build mapping dictionary: Leaf Node ID -> Array Index for rapid accumulation
     std::map<int, int> leaf_to_idx;
     for(int l = 0; l < L; ++l) {
         leaf_to_idx[unique_leaf_ids[l]] = l;
@@ -62,13 +86,13 @@ double laplace_irls_cpp(NumericVector R,
     double tol = 1e-4;
     int max_iter = 10;
     
-    // 第4步：IRLS 寻找局部后验众数
+    // Step 4: IRLS to find the local posterior mode
     for (int iter = 0; iter < max_iter; ++iter) {
         NumericVector mu_old = clone(mu_hat);
         NumericVector S_W(L, 0.0);
         NumericVector S_WR(L, 0.0);
         
-        // 遍历所有观测值，聚合计算
+        // Iterate through all observations and aggregate sufficient statistics
         for (int i = 0; i < N; ++i) {
             double c_i = (R[i] > mu_hat[i]) ? (1.0 / gamma2) : gamma2;
             double w_i = c_i * lambda[i];
@@ -80,7 +104,7 @@ double laplace_irls_cpp(NumericVector R,
         double max_diff = 0.0;
         NumericVector mu_mode(L, 0.0);
         
-        // 更新叶子节点的 mu
+        // Update mu for leaf nodes
         for (int l = 0; l < L; ++l) {
             if (sigma2_mu_j[l] == 0.0) {
                 mu_mode[l] = 0.0;
@@ -90,7 +114,7 @@ double laplace_irls_cpp(NumericVector R,
             }
         }
         
-        // 将 mu 映射回观测值层面并检查收敛
+        // Map mu back to the observation level and check for convergence
         for (int i = 0; i < N; ++i) {
             int idx = leaf_to_idx[leaf_ids[i]];
             mu_hat[i] = mu_mode[idx];
@@ -101,7 +125,7 @@ double laplace_irls_cpp(NumericVector R,
         if (max_diff < tol) break;
     }
     
-    // 第5步和第6步：在收敛状态下计算最终统计量与对数边缘似然
+    // Steps 5 & 6: Compute final statistics and log-marginal likelihood at convergence
     NumericVector S_W(L, 0.0);
     NumericVector S_WR(L, 0.0);
     NumericVector S_WR2(L, 0.0);
@@ -130,7 +154,9 @@ double laplace_irls_cpp(NumericVector R,
 ')
 
 
-
+# ------------------------------------------------------------------------------
+# 3. Parameter Simulation (Posterior Sampler)
+# ------------------------------------------------------------------------------
 cppFunction('
 NumericVector simulate_mu_irls_cpp(NumericVector R, 
                                    NumericVector lambda, 
@@ -143,13 +169,13 @@ NumericVector simulate_mu_irls_cpp(NumericVector R,
     int L = unique_leaf_ids.size();
     NumericVector mu_values(L, 0.0);
     
-    // 建立字典：叶子节点 ID -> 数组索引
+    // Build mapping dictionary: Leaf Node ID -> Array Index
     std::map<int, int> leaf_to_idx;
     for(int l = 0; l < L; ++l) {
         leaf_to_idx[unique_leaf_ids[l]] = l;
     }
     
-    // 极其高效的分组：把每个叶子节点对应的观测值索引存起来
+    // Highly efficient grouping: pre-allocate observation indices by leaf node
     std::vector<std::vector<int>> obs_by_leaf(L);
     for(int i = 0; i < N; ++i) {
         int id = leaf_ids[i];
@@ -161,7 +187,7 @@ NumericVector simulate_mu_irls_cpp(NumericVector R,
     double gamma2_safe = std::max(gamma2, 1e-10);
     double tol = 1e-4;
     
-    // 对每个叶子节点进行独立计算
+    // Perform independent calculations for each leaf node
     for(int l = 0; l < L; ++l) {
         double sig2_mu = sigma2_mu_j[l];
         if (sig2_mu == 0.0) {
@@ -172,13 +198,13 @@ NumericVector simulate_mu_irls_cpp(NumericVector R,
         const std::vector<int>& obs = obs_by_leaf[l];
         int n_leaf = obs.size();
         
-        // 如果该叶节点没有有效观测值，直接从先验抽样
+        // If the leaf node has no valid observations, sample directly from the prior
         if (n_leaf == 0) {
             mu_values[l] = R::rnorm(0.0, std::sqrt(sig2_mu));
             continue;
         }
         
-        // 初始化 mu_hat
+        // Initialize mu_hat
         double sum_lam = 0.0;
         double sum_lam_r = 0.0;
         for(int idx : obs) {
@@ -190,7 +216,7 @@ NumericVector simulate_mu_irls_cpp(NumericVector R,
         sum_lam = std::max(sum_lam, 1e-10);
         double mu_hat = sum_lam_r / (sum_lam + sigma2 / sig2_mu);
         
-        // IRLS 核心循环 (最多迭代10次)
+        // Core IRLS loop (capped at 10 iterations)
         for(int iter = 0; iter < 10; ++iter) {
             double mu_old = mu_hat;
             double num = 0.0;
@@ -208,7 +234,7 @@ NumericVector simulate_mu_irls_cpp(NumericVector R,
             if(std::abs(mu_hat - mu_old) < tol) break;
         }
         
-        // 防御性编程：如果 mu_hat 出现异常（不收敛或无穷大），回退到中位数（和原 R 代码保持一致）
+        // Defensive programming: If mu_hat is non-finite (diverges), fallback to the median
         if (!std::isfinite(mu_hat)) {
             std::vector<double> valid_R;
             for(int idx : obs) {
@@ -225,7 +251,7 @@ NumericVector simulate_mu_irls_cpp(NumericVector R,
             }
         }
         
-        // 计算 Laplace 方差并生成最终的随机样本
+        // Compute Laplace variance and generate the final random sample
         double sum_w_final = 0.0;
         for(int idx : obs) {
             if(std::isfinite(R[idx]) && std::isfinite(lambda[idx])) {
@@ -238,7 +264,7 @@ NumericVector simulate_mu_irls_cpp(NumericVector R,
         double laplace_var = sigma2 / (sum_w_final + sigma2 / sig2_mu);
         double laplace_sd = std::sqrt(std::max(laplace_var, 1e-14));
         
-        // R::rnorm 可以无缝对接 R 语言的 set.seed() 系统
+        // R::rnorm seamlessly integrates with R's internal set.seed() system
         double mu_star = R::rnorm(mu_hat, laplace_sd);
         mu_values[l] = std::isfinite(mu_star) ? mu_star : mu_hat;
     }
