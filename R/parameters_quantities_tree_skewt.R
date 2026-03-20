@@ -11,7 +11,7 @@
 #' @param sigma_beta Hyperparameter for sigma2 Inverse-Gamma prior (rate)
 #' 
 #' @export
-skewt_parameter_update <- function(x, gamma2, v, d = 0.01, 
+skewt_parameter_update <- function(x, gamma2, v, d = 0.1, 
                                    alpha_gamma = 2, beta_gamma = 1, 
                                    lambda, sigma_alpha, sigma_beta) {
   n <- length(x)
