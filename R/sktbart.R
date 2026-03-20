@@ -1,4 +1,39 @@
-
+#' BART with Skew-t Errors via Laplace Approximation
+#'
+#' @param y A numeric vector of the response variable.
+#' @param x A data frame or matrix of predictors.
+#' @param sparse Logical; if TRUE, uses a Dirichlet prior for sparse variable selection.
+#' @param ntrees Number of trees in the ensemble (default is 50).
+#' @param node_min_size Minimum number of observations required in a terminal node.
+#' @param alpha Base hyperparameter for tree prior (controls depth).
+#' @param beta Power hyperparameter for tree prior (controls depth).
+#' @param v Degrees of freedom for the Skew-t distribution (initial value).
+#' @param lambda Latent weights for the scale-mixture representation (initial vector).
+#' @param mu_mu Mean of the prior for leaf node parameters.
+#' @param sigma2 Initial error variance.
+#' @param sigma2_mu Prior variance for leaf node parameters.
+#' @param nburn Number of burn-in iterations for MCMC.
+#' @param npost Number of posterior samples to collect.
+#' @param nthin Thinning interval for MCMC.
+#'
+#' @return An object of class 'sktbart' containing posterior samples.
+#' 
+#' @importFrom stats rgamma rexp dnorm sd rchisq rnorm pnorm as.formula terms xtabs lm var median
+#' @importFrom truncnorm rtruncnorm
+#' @importFrom dbarts makeModelMatrixFromDataFrame
+#' @importFrom rust ru
+#' @export
+#'
+#' @examples
+#' # Example: Friedman Nonlinear Model
+#' n <- 250; p <- 10
+#' x <- matrix(runif(n * p), n, p)
+#' # Formula: 10*sin(pi*x1*x2) + 20*(x3-0.5)^2 + 10*x4 + 5*x5
+#' f_x <- 10 * sin(pi * x[,1] * x[,2]) + 20 * (x[,3] - 0.5)^2 + 10 * x[,4] + 5 * x[,5]
+#' y <- f_x + rnorm(n, sd = 1.0)
+#' 
+#' model <- sktbart(y, x, nburn = 2500, npost = 2500)
+#'
 sktbart <- function(
     y,
     x,
