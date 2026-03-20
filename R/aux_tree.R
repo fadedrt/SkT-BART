@@ -1,3 +1,10 @@
+fill_tree_details = function(curr_tree, X) {
+  # 调用刚才编译的 C++ 后端
+  res <- fill_tree_details_cpp(curr_tree$tree_matrix, X)
+  
+  return(list(tree_matrix = res$tree_matrix,
+              node_indices = res$node_indices))
+}
 # Get predictions ---------------------------------------------------------
 
 get_predictions = function(trees, X, single_tree = FALSE) {
