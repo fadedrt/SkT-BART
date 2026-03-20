@@ -4,125 +4,8 @@
 #' NOTE: This version does NOT use C++ acceleration (Pure R implementation).
 #' It handles non-conjugate Skew-t error distributions via Laplace approximations 
 #' to robustly model data with outliers and asymmetric residuals.
-#' @author Your Name / Research Group
-#' @license MIT
-
 # ==============================================================================
-# 1. HELPER FUNCTIONS & MCMC UTILITIES
-# ==============================================================================
-
-# Resample a single element from a vector
-resample <- function(x, ...) x[sample.int(length(x), size = 1), ...]
-
-# Update Dirichlet weights for splitting probabilities
-update_s_ <- function(var_count, p, alpha_s) {
-  shape <- alpha_s / p + var_count
-  temp  <- rgamma(length(shape), shape, rate = 1)
-  temp / sum(temp)
-}
-
-# Count the number of distinct covariates used in internal nodes
-get_number_distinct_cov <- function(tree) {
-  which_terminal <- which(tree$tree_matrix[, 'terminal'] == 0)
-  num_distinct_cov <- length(unique(tree$tree_matrix[which_terminal, 'split_variable']))
-  return(num_distinct_cov)
-}
-
-# Decide which type of move to make in tree MCMC
-sample_move <- function(curr_tree, i, nburn) {
-  if (nrow(curr_tree$tree_matrix) == 1 || i < max(floor(0.1 * nburn), 10)) {
-    type <- 'grow'
-  } else {
-    type <- sample(c('grow', 'prune', 'change'), 1)
-  }
-  return(type)
-}
-
-get_children <- function(tree_mat, parent) {
-  all_children <- NULL
-  if (as.numeric(tree_mat[parent, 'terminal']) == 1) {
-    return(c(all_children, parent))
-  } else {
-    curr_child_left  <- as.numeric(tree_mat[parent, 'child_left'])
-    curr_child_right <- as.numeric(tree_mat[parent, 'child_right'])
-    return(c(all_children,
-             get_children(tree_mat, curr_child_left),
-             get_children(tree_mat, curr_child_right)))
-  }
-}
-
-get_ancestors <- function(tree) {
-  save_ancestor <- NULL
-  which_terminal <- which(tree$tree_matrix[, 'terminal'] == 1)
-  
-  if (nrow(tree$tree_matrix) == 1) {
-    save_ancestor <- cbind(terminal = NULL, ancestor = NULL)
-  } else {
-    for (k in seq_len(length(which_terminal))) {
-      get_parent <- as.numeric(as.character(tree$tree_matrix[which_terminal[k], 'parent']))
-      get_split_var <- as.character(tree$tree_matrix[get_parent, 'split_variable'])
-      
-      save_ancestor <- rbind(save_ancestor,
-                             cbind(terminal = which_terminal[k],
-                                   ancestor = get_split_var))
-      
-      while (get_parent > 1) {
-        get_parent <- as.numeric(as.character(tree$tree_matrix[get_parent, 'parent']))
-        get_split_var <- as.character(tree$tree_matrix[get_parent, 'split_variable'])
-        save_ancestor <- rbind(save_ancestor,
-                               cbind(terminal = which_terminal[k],
-                                     ancestor = get_split_var))
-      }
-    }
-    save_ancestor <- unique(save_ancestor) 
-    save_ancestor <- save_ancestor[order(save_ancestor[, 1], save_ancestor[, 2]), ] 
-  }
-  return(save_ancestor)
-}
-
-# ==============================================================================
-# 2. TREE PREDICTION FUNCTIONS
-# ==============================================================================
-
-# Note: In a pure R version, fill_tree_details needs an R-based traversal loop.
-# Assuming a pure R fallback is used here instead of fill_tree_details_cpp.
-fill_tree_details <- function(curr_tree, X) {
-  # 如果不使用 C++ 加速，这里应当是纯 R 的树遍历逻辑
-  # (为了保持代码结构，这里保留函数签名，你可以插入你的纯 R 遍历代码)
-  # res <- pure_r_tree_traversal(curr_tree$tree_matrix, X)
-  
-  # 临时占位，假设 res 已经被纯 R 逻辑返回
-  return(list(tree_matrix = curr_tree$tree_matrix,
-              node_indices = rep(1, nrow(X)))) # Placeholder
-}
-
-get_predictions <- function(trees, X, single_tree = FALSE) {
-  if (is.null(names(trees)) & (length(trees) == 1)) trees <- trees[[1]]
-  
-  if (single_tree) {
-    if (nrow(trees$tree_matrix) == 1) {
-      predictions <- rep(trees$tree_matrix[1, 'mu'], nrow(X))
-    } else {
-      predictions <- rep(NA, nrow(X))
-      unique_node_indices <- unique(trees$node_indices)
-      curr_X_node_indices <- fill_tree_details(trees, X)$node_indices
-      
-      for (i in 1:length(unique_node_indices)) {
-        predictions[curr_X_node_indices == unique_node_indices[i]] <-
-          trees$tree_matrix[unique_node_indices[i], 'mu']
-      }
-    }
-  } else {
-    partial_trees <- trees
-    partial_trees[[1]] <- NULL 
-    predictions <- get_predictions(trees[[1]], X, single_tree = TRUE) +
-      get_predictions(partial_trees, X, single_tree = length(partial_trees) == 1)
-  }
-  return(predictions)
-}
-
-# ==============================================================================
-# 3. LAPLACE APPROXIMATION LIKELIHOOD & SAMPLING
+# 1. LAPLACE APPROXIMATION LIKELIHOOD & SAMPLING
 # ==============================================================================
 
 #' @export
@@ -270,7 +153,7 @@ simulate_mu_skew_laplace_legacy <- function(tree, R, lambda1, gamma2, sigma2, si
 }
 
 # ==============================================================================
-# 4. MAIN MODEL FITTING FUNCTION
+# 2. MAIN MODEL FITTING FUNCTION
 # ==============================================================================
 
 #' @export
