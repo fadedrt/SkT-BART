@@ -184,13 +184,7 @@ tree_full_skewt_laplace <- function(tree, R, lambda, sigma2, sigma2_mu, gamma2,
   return(marg_lik)
 }
 
-fill_tree_details = function(curr_tree, X) {
-  # 调用刚才编译的 C++ 后端
-  res <- fill_tree_details_cpp(curr_tree$tree_matrix, X)
-  
-  return(list(tree_matrix = res$tree_matrix,
-              node_indices = res$node_indices))
-}
+
 
 
 
