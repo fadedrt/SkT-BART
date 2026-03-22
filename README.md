@@ -10,7 +10,7 @@ The Bayesian tree structure and framework in this code are adapted from the prim
 # Load required libraries
 library(skewt)   # For skewed t distribution functions
 library(zeallot) # For multiple assignment (%<-%)
-library(rust)    # For the update of \gamma
+library(rust)    # For the update of skew parameter gamma
 
 # Function to simulate Friedman's dataset with skew-t errors
 sim_fried <- function(N, P, v, sigma, gamma) {
