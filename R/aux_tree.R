@@ -581,3 +581,11 @@ swap_tree = function(X, y, curr_tree, node_min_size) {
 } # End of swap_tree function
 
 resample <- function(x, ...) x[sample.int(length(x), size = 1), ...]
+
+get_number_distinct_cov <- function(tree) {
+  # Select the rows corresponding to internal nodes
+  which_terminal = which(tree$tree_matrix[,'terminal'] == 0)
+  # Get unique covariates used in splitting
+  num_distinct_cov = length(unique(tree$tree_matrix[which_terminal,'split_variable']))
+  return(num_distinct_cov)
+}
