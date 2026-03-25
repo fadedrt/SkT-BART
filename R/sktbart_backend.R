@@ -207,9 +207,6 @@ tree_full_skewt_laplace <- function(tree, R, lambda, sigma2, sigma2_mu, gamma2,
   return(marg_lik)
 }
 
-
-library(Rcpp)
-
 # Compile C++ core sampling acceleration code
 cppFunction('
 NumericVector simulate_mu_irls_cpp(NumericVector R, 
@@ -318,7 +315,7 @@ NumericVector simulate_mu_irls_cpp(NumericVector R,
         double laplace_var = sigma2 / (sum_w_final + sigma2 / sig2_mu);
         double laplace_sd = std::sqrt(std::max(laplace_var, 1e-14));
         
-        // R::rnorm seamlessly integrates with R's set.seed() system
+        // R::rnorm seamlessly integrates with the R set.seed() system
         double mu_star = R::rnorm(mu_hat, laplace_sd);
         mu_values[l] = std::isfinite(mu_star) ? mu_star : mu_hat;
     }
