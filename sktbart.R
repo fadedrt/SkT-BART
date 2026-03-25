@@ -19,8 +19,6 @@
 #' @return An object of class 'sktbart' containing posterior samples.
 #' 
 #' @importFrom stats rgamma rexp dnorm sd rchisq rnorm pnorm as.formula terms xtabs lm var median
-#' @importFrom truncnorm rtruncnorm
-#' @importFrom dbarts makeModelMatrixFromDataFrame
 #' @importFrom rust ru
 #' @export
 #'
