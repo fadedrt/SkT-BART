@@ -260,6 +260,10 @@ simulate_mu_skew_laplace <- function(tree, R, lambda1, gamma2, sigma2, sigma2_mu
   return(tree)
 }
 
-
+update_s_  <- function(var_count, p, alpha_s) {
+  shape <- alpha_s / p + var_count
+  temp  <- rgamma(length(shape), shape, rate = 1)
+  temp / sum(temp)
+}
 
                                
