@@ -16,7 +16,7 @@
 # ==============================================================================
 
 library(Rcpp)
-# 直接在 R 脚本中编译 C++ 函数
+# Compile C++ function directly within the R script
 cppFunction('
 List fill_tree_details_cpp(NumericMatrix tree_matrix, NumericMatrix X) {
     int n_obs = X.nrow();
@@ -56,9 +56,9 @@ List fill_tree_details_cpp(NumericMatrix tree_matrix, NumericMatrix X) {
 }
 ')
 
-# 用包装函数替换原来的纯 R 循环
+# Wrapper function to replace the original pure R loop
 fill_tree_details = function(curr_tree, X) {
-  # 调用刚才编译的 C++ 后端
+  # Call the compiled C++ backend
   res <- fill_tree_details_cpp(curr_tree$tree_matrix, X)
   
   return(list(tree_matrix = res$tree_matrix,
@@ -67,7 +67,7 @@ fill_tree_details = function(curr_tree, X) {
 
 
 
-# 编译 C++ 核心加速代码
+# Compile the C++ core acceleration code
 cppFunction('
 double laplace_irls_cpp(NumericVector R, 
                         NumericVector lambda, 
@@ -80,7 +80,7 @@ double laplace_irls_cpp(NumericVector R,
     int N = R.size();
     int L = unique_leaf_ids.size();
     
-    // 建立 叶子节点ID 到 数组索引 的映射字典，方便快速累加
+    // Create a dictionary mapping Leaf ID to array index for fast accumulation
     std::map<int, int> leaf_to_idx;
     for(int l = 0; l < L; ++l) {
         leaf_to_idx[unique_leaf_ids[l]] = l;
@@ -90,13 +90,13 @@ double laplace_irls_cpp(NumericVector R,
     double tol = 1e-4;
     int max_iter = 10;
     
-    // 第4步：IRLS 寻找局部后验众数
+    // Step 4: IRLS to find the local posterior mode
     for (int iter = 0; iter < max_iter; ++iter) {
         NumericVector mu_old = clone(mu_hat);
         NumericVector S_W(L, 0.0);
         NumericVector S_WR(L, 0.0);
         
-        // 遍历所有观测值，聚合计算
+        // Iterate over all observations, perform aggregate calculations
         for (int i = 0; i < N; ++i) {
             double c_i = (R[i] > mu_hat[i]) ? (1.0 / gamma2) : gamma2;
             double w_i = c_i * lambda[i];
@@ -108,7 +108,7 @@ double laplace_irls_cpp(NumericVector R,
         double max_diff = 0.0;
         NumericVector mu_mode(L, 0.0);
         
-        // 更新叶子节点的 mu
+        // Update mu for leaf nodes
         for (int l = 0; l < L; ++l) {
             if (sigma2_mu_j[l] == 0.0) {
                 mu_mode[l] = 0.0;
@@ -118,7 +118,7 @@ double laplace_irls_cpp(NumericVector R,
             }
         }
         
-        // 将 mu 映射回观测值层面并检查收敛
+        // Map mu back to the observation level and check for convergence
         for (int i = 0; i < N; ++i) {
             int idx = leaf_to_idx[leaf_ids[i]];
             mu_hat[i] = mu_mode[idx];
@@ -129,7 +129,7 @@ double laplace_irls_cpp(NumericVector R,
         if (max_diff < tol) break;
     }
     
-    // 第5步和第6步：在收敛状态下计算最终统计量与对数边缘似然
+    // Step 5 and 6: Calculate the final statistics and log marginal likelihood at convergence
     NumericVector S_W(L, 0.0);
     NumericVector S_WR(L, 0.0);
     NumericVector S_WR2(L, 0.0);
@@ -157,11 +157,11 @@ double laplace_irls_cpp(NumericVector R,
 }
 ')
 
-# 全新的、半混血加速版的 tree_full_skewt_laplace
+# A new, hybrid accelerated version of tree_full_skewt_laplace
 tree_full_skewt_laplace <- function(tree, R, lambda, sigma2, sigma2_mu, gamma2, 
                                     common_vars, aux_factor_var) {
   
-  # === 留在 R 中的部分 (处理繁杂的拓扑验证) ===
+  # === Parts kept in R (handling complex topology validation) ===
   # Step 1: Identify terminal nodes
   terminal_nodes <- as.numeric(which(tree$tree_matrix[, 'terminal'] == 1))
   
@@ -194,7 +194,7 @@ tree_full_skewt_laplace <- function(tree, R, lambda, sigma2, sigma2_mu, gamma2,
   
   leaf_ids <- as.integer(tree$node_indices)
   
-  # === 抛给 C++ 的部分 (处理高密度数学运算) ===
+  # === Parts delegated to C++ (handling high-density math operations) ===
   # Step 4-6: C++ backend
   marg_lik <- laplace_irls_cpp(R = R,
                                lambda = lambda,
@@ -210,7 +210,7 @@ tree_full_skewt_laplace <- function(tree, R, lambda, sigma2, sigma2_mu, gamma2,
 
 library(Rcpp)
 
-# 编译 C++ 核心抽样加速代码
+# Compile C++ core sampling acceleration code
 cppFunction('
 NumericVector simulate_mu_irls_cpp(NumericVector R, 
                                    NumericVector lambda, 
@@ -223,13 +223,13 @@ NumericVector simulate_mu_irls_cpp(NumericVector R,
     int L = unique_leaf_ids.size();
     NumericVector mu_values(L, 0.0);
     
-    // 建立字典：叶子节点 ID -> 数组索引
+    // Create a dictionary: Leaf node ID -> array index
     std::map<int, int> leaf_to_idx;
     for(int l = 0; l < L; ++l) {
         leaf_to_idx[unique_leaf_ids[l]] = l;
     }
     
-    // 极其高效的分组：把每个叶子节点对应的观测值索引存起来
+    // Highly efficient grouping: store the observation indices corresponding to each leaf node
     std::vector<std::vector<int>> obs_by_leaf(L);
     for(int i = 0; i < N; ++i) {
         int id = leaf_ids[i];
@@ -241,7 +241,7 @@ NumericVector simulate_mu_irls_cpp(NumericVector R,
     double gamma2_safe = std::max(gamma2, 1e-10);
     double tol = 1e-4;
     
-    // 对每个叶子节点进行独立计算
+    // Perform independent calculations for each leaf node
     for(int l = 0; l < L; ++l) {
         double sig2_mu = sigma2_mu_j[l];
         if (sig2_mu == 0.0) {
@@ -252,13 +252,13 @@ NumericVector simulate_mu_irls_cpp(NumericVector R,
         const std::vector<int>& obs = obs_by_leaf[l];
         int n_leaf = obs.size();
         
-        // 如果该叶节点没有有效观测值，直接从先验抽样
+        // If the leaf node has no valid observations, sample directly from the prior
         if (n_leaf == 0) {
             mu_values[l] = R::rnorm(0.0, std::sqrt(sig2_mu));
             continue;
         }
         
-        // 初始化 mu_hat
+        // Initialize mu_hat
         double sum_lam = 0.0;
         double sum_lam_r = 0.0;
         for(int idx : obs) {
@@ -270,7 +270,7 @@ NumericVector simulate_mu_irls_cpp(NumericVector R,
         sum_lam = std::max(sum_lam, 1e-10);
         double mu_hat = sum_lam_r / (sum_lam + sigma2 / sig2_mu);
         
-        // IRLS 核心循环 (最多迭代10次)
+        // Core IRLS loop (maximum 10 iterations)
         for(int iter = 0; iter < 10; ++iter) {
             double mu_old = mu_hat;
             double num = 0.0;
@@ -288,7 +288,7 @@ NumericVector simulate_mu_irls_cpp(NumericVector R,
             if(std::abs(mu_hat - mu_old) < tol) break;
         }
         
-        // 防御性编程：如果 mu_hat 出现异常（不收敛或无穷大），回退到中位数（和原 R 代码保持一致）
+        // Defensive programming: If mu_hat is abnormal (non-convergent or infinite), fall back to the median (consistent with original R code)
         if (!std::isfinite(mu_hat)) {
             std::vector<double> valid_R;
             for(int idx : obs) {
@@ -305,7 +305,7 @@ NumericVector simulate_mu_irls_cpp(NumericVector R,
             }
         }
         
-        // 计算 Laplace 方差并生成最终的随机样本
+        // Calculate the Laplace variance and generate the final random sample
         double sum_w_final = 0.0;
         for(int idx : obs) {
             if(std::isfinite(R[idx]) && std::isfinite(lambda[idx])) {
@@ -318,7 +318,7 @@ NumericVector simulate_mu_irls_cpp(NumericVector R,
         double laplace_var = sigma2 / (sum_w_final + sigma2 / sig2_mu);
         double laplace_sd = std::sqrt(std::max(laplace_var, 1e-14));
         
-        // R::rnorm 可以无缝对接 R 语言的 set.seed() 系统
+        // R::rnorm seamlessly integrates with R's set.seed() system
         double mu_star = R::rnorm(mu_hat, laplace_sd);
         mu_values[l] = std::isfinite(mu_star) ? mu_star : mu_hat;
     }
@@ -328,11 +328,11 @@ NumericVector simulate_mu_irls_cpp(NumericVector R,
 ')
 
 
-# 重新封装的纯 R 接口函数
+# Re-wrapped pure R interface function
 simulate_mu_skew_laplace <- function(tree, R, lambda1, gamma2, sigma2, sigma2_mu, 
                                      common_vars, aux_factor_var) {
   
-  # 1. 在 R 层面处理繁杂的树节点拓扑和多重分裂验证逻辑 (保持原样)
+  # 1. Handle complex tree node topology and multiple split validation logic at the R level (kept as is)
   which_terminal <- as.numeric(which(tree$tree_matrix[, 'terminal'] == 1))
   
   if(nrow(tree$tree_matrix) != 1) {
@@ -351,16 +351,16 @@ simulate_mu_skew_laplace <- function(tree, R, lambda1, gamma2, sigma2, sigma2_mu
   
   unique_leaf_indices <- sort(unique(tree$node_indices))
   
-  # 对齐参数尺寸：给所有现存的叶子节点分配先验方差
+  # Align parameter dimensions: assign prior variance to all existing leaf nodes
   sigma2_mu_aux <- rep(sigma2_mu, length(unique_leaf_indices))
   
-  # 将违规节点的方差强行置为 0
+  # Forcibly set the variance of invalid nodes to 0
   if (length(which_terminal_no_double_split) > 0 && any(which_terminal_no_double_split != 0)) {
     invalid_idx <- which(unique_leaf_indices %in% which_terminal_no_double_split)
     sigma2_mu_aux[invalid_idx] <- 0
   }
   
-  # 2. 调用 C++ 后端：极限压缩 IRLS 抽样循环的时间
+  # 2. Call the C++ backend: strictly compress the time of the IRLS sampling loop
   mu_values <- simulate_mu_irls_cpp(
     R = R,
     lambda = lambda1,
@@ -371,11 +371,11 @@ simulate_mu_skew_laplace <- function(tree, R, lambda1, gamma2, sigma2, sigma2_mu
     sigma2 = sigma2
   )
   
-  # 3. 把算好的参数原封不动地写回树矩阵里
+  # 3. Write the calculated parameters back into the tree matrix intact
   tree$tree_matrix[, 'mu'] <- NA
   tree$tree_matrix[unique_leaf_indices, 'mu'] <- mu_values
   
-  # 防御性覆写，确保无效节点强行归零
+  # Defensive overwrite, ensuring invalid nodes are forced to zero
   if (any(which_terminal_no_double_split != 0)) {
     tree$tree_matrix[which_terminal_no_double_split, 'mu'] <- 0 
   }
