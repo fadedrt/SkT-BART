@@ -589,3 +589,66 @@ get_number_distinct_cov <- function(tree) {
   num_distinct_cov = length(unique(tree$tree_matrix[which_terminal,'split_variable']))
   return(num_distinct_cov)
 }
+
+# Get ancestors for terminal nodes
+get_ancestors = function(tree) {
+  save_ancestor = NULL
+  which_terminal = which(tree$tree_matrix[,'terminal'] == 1)
+  
+  if(nrow(tree$tree_matrix) == 1) {
+    save_ancestor = cbind(terminal = NULL, ancestor = NULL)
+  } else {
+    for (k in seq_len(length(which_terminal))) {
+      get_parent = as.numeric(as.character(tree$tree_matrix[which_terminal[k], 'parent']))
+      get_split_var = as.character(tree$tree_matrix[get_parent, 'split_variable'])
+      
+      save_ancestor = rbind(save_ancestor,
+                            cbind(terminal = which_terminal[k],
+                                  ancestor = get_split_var))
+      
+      while (get_parent > 1) {
+        get_parent = as.numeric(as.character(tree$tree_matrix[get_parent,'parent']))
+        get_split_var = as.character(tree$tree_matrix[get_parent, 'split_variable'])
+        save_ancestor = rbind(save_ancestor,
+                              cbind(terminal = which_terminal[k],
+                                    ancestor = get_split_var))
+      }
+    }
+    save_ancestor = unique(save_ancestor) # remove duplicates
+    save_ancestor = save_ancestor[order(save_ancestor[,1], save_ancestor[,2]),] # sort by terminal and ancestor
+  }
+  
+  return(save_ancestor)
+}
+
+# Get ancestors for internal nodes
+get_ancestors_internal = function(tree) {
+  save_ancestor = NULL
+  tree = tree$tree_matrix
+  which_internal = which(tree[,'terminal'] == 0)
+  
+  if(nrow(tree) == 1) {
+    save_ancestor = cbind(internal = NULL, ancestor = NULL)
+  } else {
+    for (k in length(which_internal):1) {
+      internal_node = which_internal[k]
+      parent = tree[internal_node, 'parent']
+      get_split_var = tree[internal_node, 'split_variable']
+      
+      save_ancestor = rbind(save_ancestor,
+                            cbind(internal = internal_node,
+                                  parent   = parent,
+                                  split_var = get_split_var))
+      
+      while (!is.na(parent) && parent > 0) {
+        get_split_var = tree[parent, 'split_variable']
+        parent = tree[parent, 'parent']
+        save_ancestor = rbind(save_ancestor,
+                              cbind(internal = internal_node,
+                                    parent   = parent,
+                                    split_var = get_split_var))
+      }
+    }
+  }
+  return(save_ancestor[,,drop = FALSE])
+}
