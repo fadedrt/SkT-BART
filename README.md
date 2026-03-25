@@ -11,7 +11,7 @@ The Bayesian tree structure and framework in this code are adapted from the prim
 library(skewt)   # For skewed t distribution functions
 library(zeallot) # For multiple assignment (%<-%)
 library(rust)    # For the update of skew parameter gamma
-
+library(Rcpp)    # Seamless R and C++ integration for computational acceleration
 # Function to simulate Friedman's dataset with skew-t errors
 sim_fried <- function(N, P, v, sigma, gamma) {
   X <- matrix(runif(N * P), nrow = N)  # Random uniform predictors
