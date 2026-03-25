@@ -23,7 +23,7 @@ sim_fried <- function(N, P, v, sigma, gamma) {
 # -------------------------
 # Simulate training and test datasets
 # -------------------------
-set.seed(123)
+set.seed(1)
 c(x, y, mu, v, gamma) %<-% sim_fried(250, 5, v = 1, sigma = 1, gamma = 1)
 
 c(test_x, test_y, test_mu, v_t, gamma_t) %<-% sim_fried(100, 5, v = 1, sigma = 1, gamma = 1)
