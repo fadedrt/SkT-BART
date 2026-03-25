@@ -580,3 +580,4 @@ swap_tree = function(X, y, curr_tree, node_min_size) {
   
 } # End of swap_tree function
 
+resample <- function(x, ...) x[sample.int(length(x), size = 1), ...]
