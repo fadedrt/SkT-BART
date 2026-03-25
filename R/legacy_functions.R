@@ -4,156 +4,10 @@
 #' NOTE: This version does NOT use C++ acceleration (Pure R implementation).
 #' It handles non-conjugate Skew-t error distributions via Laplace approximations 
 #' to robustly model data with outliers and asymmetric residuals.
-# ==============================================================================
-# 1. LAPLACE APPROXIMATION LIKELIHOOD & SAMPLING
-# ==============================================================================
 
-#' @export
-tree_full_skewt_laplace_legacy <- function(tree, R, lambda, sigma2, sigma2_mu, gamma2, 
-                                           common_vars, aux_factor_var) {
-  
-  terminal_nodes <- as.numeric(which(tree$tree_matrix[, 'terminal'] == 1))
-  
-  if (nrow(tree$tree_matrix) != 1) {
-    terminal_ancestors <- get_ancestors(tree)
-    ancestor_table <- table(terminal_ancestors[, 1], terminal_ancestors[, 2])
-    
-    terminals_invalid <- NULL
-    for (k in 1:nrow(ancestor_table)) {
-      ancestor_vars <- names(ancestor_table[k, ])[ancestor_table[k, ] != 0]
-      is_invalid <- any(sapply(aux_factor_var, function(x) all(ancestor_vars %in% x)))
-      if (is_invalid) {
-        terminals_invalid[k] <- rownames(ancestor_table)[k]
-      }
-    }
-    terminals_invalid <- as.numeric(terminals_invalid[!is.na(terminals_invalid)])
-  } else {
-    terminals_invalid <- 0
-  }
-  
-  sigma2_mu_named <- rep(sigma2_mu, length(terminal_nodes))
-  names(sigma2_mu_named) <- as.character(terminal_nodes)
-  if (length(terminals_invalid) > 0 && any(terminals_invalid != 0)) {
-    sigma2_mu_named[as.character(terminals_invalid)] <- 0
-  }
-  
-  leaf_ids <- as.character(tree$node_indices)
-  
-  mu_hat <- rep(0, length(R))  
-  tol <- 1e-4
-  max_iter <- 10  
-  
-  for (iter in 1:max_iter) {
-    mu_old <- mu_hat
-    C_i_iter <- ifelse(R > mu_hat, 1 / gamma2, gamma2)
-    W_i_iter <- C_i_iter * lambda
-    
-    S_W_leaf  <- tapply(W_i_iter, leaf_ids, sum)
-    S_WR_leaf <- tapply(W_i_iter * R, leaf_ids, sum)
-    
-    sigma2_mu_j <- sigma2_mu_named[names(S_W_leaf)]
-    denom_mu <- S_W_leaf + (sigma2 / sigma2_mu_j)
-    denom_mu[sigma2_mu_j == 0] <- Inf 
-    
-    mu_mode_leaf <- S_WR_leaf / denom_mu
-    mu_hat <- as.numeric(mu_mode_leaf[leaf_ids])
-    
-    if (max(abs(mu_hat - mu_old), na.rm = TRUE) < tol) break
-  }
-  
-  C_i <- ifelse(R > mu_hat, 1 / gamma2, gamma2)
-  W_i <- C_i * lambda
-  
-  S_W   <- tapply(W_i, leaf_ids, sum)
-  S_WR  <- tapply(W_i * R, leaf_ids, sum)
-  S_WR2 <- tapply(W_i * R^2, leaf_ids, sum)
-  
-  sigma_mu_j_final <- sigma2_mu_named[names(S_W)]
-  
-  denom <- S_W * sigma_mu_j_final + sigma2
-  term1 <- log(sigma2) - log(denom) 
-  term2 <- (sigma_mu_j_final * S_WR^2) / (sigma2 * denom)
-  term3 <- - S_WR2 / sigma2  
-  
-  return(0.5 * sum(term1 + term2 + term3))
-}
-
-#' @export
-simulate_mu_skew_laplace_legacy <- function(tree, R, lambda1, gamma2, sigma2, sigma2_mu, 
-                                            common_vars, aux_factor_var) {
-  
-  which_terminal <- as.numeric(which(tree$tree_matrix[, 'terminal'] == 1))
-  
-  if(nrow(tree$tree_matrix) != 1) {
-    terminal_ancestors <- get_ancestors(tree)
-    aux_table <- table(terminal_ancestors[, 1], terminal_ancestors[, 2])
-    which_terminal_no_double_split <- NULL
-    for (k in 1:nrow(aux_table)) {
-      split_var_ancestors <- names(aux_table[k, ])[aux_table[k, ] != 0]
-      invalid_ancestors <- any(unlist(lapply(aux_factor_var, function(x) all(split_var_ancestors %in% x))))
-      if (invalid_ancestors) which_terminal_no_double_split[k] <- rownames(aux_table)[k]
-    }
-    which_terminal_no_double_split <- as.numeric(which_terminal_no_double_split[!is.na(which_terminal_no_double_split)]) 
-  } else {
-    which_terminal_no_double_split <- 0
-  }
-  
-  sigma2_mu_aux <- rep(sigma2_mu, length(which_terminal))
-  sigma2_mu_aux[which(which_terminal %in% which_terminal_no_double_split)] <- 0
-  
-  node_sizes <- as.numeric(tree$tree_matrix[which_terminal, 'node_size'])
-  mu_values  <- numeric(length(node_sizes))
-  unique_leaf_indices <- sort(unique(tree$node_indices))
-  gamma2_safe <- max(gamma2, 1e-10) 
-  
-  for(i in 1:length(node_sizes)) {
-    if (sigma2_mu_aux[i] == 0) {
-      mu_values[i] <- 0
-      next
-    }
-    
-    ind <- which(tree$node_indices == unique_leaf_indices[i])
-    R_leaf <- R[ind]
-    lambda_leaf <- lambda1[ind]
-    
-    valid_mask <- is.finite(R_leaf) & is.finite(lambda_leaf)
-    R_leaf <- R_leaf[valid_mask]; lambda_leaf <- lambda_leaf[valid_mask]
-    
-    if (length(R_leaf) == 0) {
-      mu_values[i] <- rnorm(1, 0, sqrt(sigma2_mu))
-      next
-    }
-    
-    sum_lam <- max(sum(lambda_leaf), 1e-10)
-    mu_hat <- sum(lambda_leaf * R_leaf) / (sum_lam + sigma2 / sigma2_mu)
-    
-    tolerance <- 1e-4
-    for(iter in 1:10) { 
-      mu_old <- mu_hat
-      W_i <- ifelse(R_leaf > mu_hat, 1/gamma2_safe, gamma2_safe) * lambda_leaf
-      mu_hat <- sum(W_i * R_leaf) / (sum(W_i) + sigma2 / sigma2_mu)
-      if(abs(mu_hat - mu_old) < tolerance) break
-    }
-    
-    if (!is.finite(mu_hat)) mu_hat <- median(R_leaf)
-    
-    W_final <- ifelse(R_leaf > mu_hat, 1/gamma2_safe, gamma2_safe) * lambda_leaf
-    laplace_var <- sigma2 / (sum(W_final) + sigma2 / sigma2_mu)
-    laplace_sd <- sqrt(max(laplace_var, 1e-14))
-    
-    mu_star <- rnorm(1, mean = mu_hat, sd = laplace_sd)
-    mu_values[i] <- ifelse(is.finite(mu_star), mu_star, mu_hat)
-  }
-  
-  tree$tree_matrix[, 'mu'] <- NA
-  tree$tree_matrix[which_terminal, 'mu'] <- mu_values
-  tree$tree_matrix[which_terminal_no_double_split, 'mu'] <- 0 
-  
-  return(tree)
-}
 
 # ==============================================================================
-# 2. MAIN MODEL FITTING FUNCTION
+# 1. MAIN MODEL FITTING FUNCTION
 # ==============================================================================
 
 #' @export
@@ -308,3 +162,153 @@ sktbart_legacy <- function(
   class(results) <- "sktbart"
   return(results)
 }
+
+
+# ==============================================================================
+# 2. LAPLACE APPROXIMATION LIKELIHOOD & SAMPLING
+# ==============================================================================
+
+#' @export
+tree_full_skewt_laplace_legacy <- function(tree, R, lambda, sigma2, sigma2_mu, gamma2, 
+                                           common_vars, aux_factor_var) {
+  
+  terminal_nodes <- as.numeric(which(tree$tree_matrix[, 'terminal'] == 1))
+  
+  if (nrow(tree$tree_matrix) != 1) {
+    terminal_ancestors <- get_ancestors(tree)
+    ancestor_table <- table(terminal_ancestors[, 1], terminal_ancestors[, 2])
+    
+    terminals_invalid <- NULL
+    for (k in 1:nrow(ancestor_table)) {
+      ancestor_vars <- names(ancestor_table[k, ])[ancestor_table[k, ] != 0]
+      is_invalid <- any(sapply(aux_factor_var, function(x) all(ancestor_vars %in% x)))
+      if (is_invalid) {
+        terminals_invalid[k] <- rownames(ancestor_table)[k]
+      }
+    }
+    terminals_invalid <- as.numeric(terminals_invalid[!is.na(terminals_invalid)])
+  } else {
+    terminals_invalid <- 0
+  }
+  
+  sigma2_mu_named <- rep(sigma2_mu, length(terminal_nodes))
+  names(sigma2_mu_named) <- as.character(terminal_nodes)
+  if (length(terminals_invalid) > 0 && any(terminals_invalid != 0)) {
+    sigma2_mu_named[as.character(terminals_invalid)] <- 0
+  }
+  
+  leaf_ids <- as.character(tree$node_indices)
+  
+  mu_hat <- rep(0, length(R))  
+  tol <- 1e-4
+  max_iter <- 10  
+  
+  for (iter in 1:max_iter) {
+    mu_old <- mu_hat
+    C_i_iter <- ifelse(R > mu_hat, 1 / gamma2, gamma2)
+    W_i_iter <- C_i_iter * lambda
+    
+    S_W_leaf  <- tapply(W_i_iter, leaf_ids, sum)
+    S_WR_leaf <- tapply(W_i_iter * R, leaf_ids, sum)
+    
+    sigma2_mu_j <- sigma2_mu_named[names(S_W_leaf)]
+    denom_mu <- S_W_leaf + (sigma2 / sigma2_mu_j)
+    denom_mu[sigma2_mu_j == 0] <- Inf 
+    
+    mu_mode_leaf <- S_WR_leaf / denom_mu
+    mu_hat <- as.numeric(mu_mode_leaf[leaf_ids])
+    
+    if (max(abs(mu_hat - mu_old), na.rm = TRUE) < tol) break
+  }
+  
+  C_i <- ifelse(R > mu_hat, 1 / gamma2, gamma2)
+  W_i <- C_i * lambda
+  
+  S_W   <- tapply(W_i, leaf_ids, sum)
+  S_WR  <- tapply(W_i * R, leaf_ids, sum)
+  S_WR2 <- tapply(W_i * R^2, leaf_ids, sum)
+  
+  sigma_mu_j_final <- sigma2_mu_named[names(S_W)]
+  
+  denom <- S_W * sigma_mu_j_final + sigma2
+  term1 <- log(sigma2) - log(denom) 
+  term2 <- (sigma_mu_j_final * S_WR^2) / (sigma2 * denom)
+  term3 <- - S_WR2 / sigma2  
+  
+  return(0.5 * sum(term1 + term2 + term3))
+}
+
+#' @export
+simulate_mu_skew_laplace_legacy <- function(tree, R, lambda1, gamma2, sigma2, sigma2_mu, 
+                                            common_vars, aux_factor_var) {
+  
+  which_terminal <- as.numeric(which(tree$tree_matrix[, 'terminal'] == 1))
+  
+  if(nrow(tree$tree_matrix) != 1) {
+    terminal_ancestors <- get_ancestors(tree)
+    aux_table <- table(terminal_ancestors[, 1], terminal_ancestors[, 2])
+    which_terminal_no_double_split <- NULL
+    for (k in 1:nrow(aux_table)) {
+      split_var_ancestors <- names(aux_table[k, ])[aux_table[k, ] != 0]
+      invalid_ancestors <- any(unlist(lapply(aux_factor_var, function(x) all(split_var_ancestors %in% x))))
+      if (invalid_ancestors) which_terminal_no_double_split[k] <- rownames(aux_table)[k]
+    }
+    which_terminal_no_double_split <- as.numeric(which_terminal_no_double_split[!is.na(which_terminal_no_double_split)]) 
+  } else {
+    which_terminal_no_double_split <- 0
+  }
+  
+  sigma2_mu_aux <- rep(sigma2_mu, length(which_terminal))
+  sigma2_mu_aux[which(which_terminal %in% which_terminal_no_double_split)] <- 0
+  
+  node_sizes <- as.numeric(tree$tree_matrix[which_terminal, 'node_size'])
+  mu_values  <- numeric(length(node_sizes))
+  unique_leaf_indices <- sort(unique(tree$node_indices))
+  gamma2_safe <- max(gamma2, 1e-10) 
+  
+  for(i in 1:length(node_sizes)) {
+    if (sigma2_mu_aux[i] == 0) {
+      mu_values[i] <- 0
+      next
+    }
+    
+    ind <- which(tree$node_indices == unique_leaf_indices[i])
+    R_leaf <- R[ind]
+    lambda_leaf <- lambda1[ind]
+    
+    valid_mask <- is.finite(R_leaf) & is.finite(lambda_leaf)
+    R_leaf <- R_leaf[valid_mask]; lambda_leaf <- lambda_leaf[valid_mask]
+    
+    if (length(R_leaf) == 0) {
+      mu_values[i] <- rnorm(1, 0, sqrt(sigma2_mu))
+      next
+    }
+    
+    sum_lam <- max(sum(lambda_leaf), 1e-10)
+    mu_hat <- sum(lambda_leaf * R_leaf) / (sum_lam + sigma2 / sigma2_mu)
+    
+    tolerance <- 1e-4
+    for(iter in 1:10) { 
+      mu_old <- mu_hat
+      W_i <- ifelse(R_leaf > mu_hat, 1/gamma2_safe, gamma2_safe) * lambda_leaf
+      mu_hat <- sum(W_i * R_leaf) / (sum(W_i) + sigma2 / sigma2_mu)
+      if(abs(mu_hat - mu_old) < tolerance) break
+    }
+    
+    if (!is.finite(mu_hat)) mu_hat <- median(R_leaf)
+    
+    W_final <- ifelse(R_leaf > mu_hat, 1/gamma2_safe, gamma2_safe) * lambda_leaf
+    laplace_var <- sigma2 / (sum(W_final) + sigma2 / sigma2_mu)
+    laplace_sd <- sqrt(max(laplace_var, 1e-14))
+    
+    mu_star <- rnorm(1, mean = mu_hat, sd = laplace_sd)
+    mu_values[i] <- ifelse(is.finite(mu_star), mu_star, mu_hat)
+  }
+  
+  tree$tree_matrix[, 'mu'] <- NA
+  tree$tree_matrix[which_terminal, 'mu'] <- mu_values
+  tree$tree_matrix[which_terminal_no_double_split, 'mu'] <- 0 
+  
+  return(tree)
+}
+
