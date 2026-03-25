@@ -9,7 +9,7 @@
 # ==============================================================================
 
 #' @export
-sktbart_legacy <- function(tree, R, lambda, sigma2, sigma2_mu, gamma2, 
+tree_full_skewt_laplace_legacy <- function(tree, R, lambda, sigma2, sigma2_mu, gamma2, 
                                            common_vars, aux_factor_var) {
   
   terminal_nodes <- as.numeric(which(tree$tree_matrix[, 'terminal'] == 1))
