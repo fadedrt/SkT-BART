@@ -42,12 +42,12 @@ c(f_hat_train, f_hat_test, f_hat_train_mean, f_hat_test_mean) %<-%
 
 # Generate residual shift based on estimated parameters
 if (v_hat > 1) {
-  # Use the median of the sampled skewed errors for shifting to ensure numerical stability
-  # particularly under heavy-tailed scenarios
-  set.seed(123)
-  r_shift <- median(sigma_hat * rskt(10000, v_hat, gamma_hat))
+  # Use the exact theoretical median of the skew-t distribution for shifting
+  # to ensure numerical stability and computational efficiency.
+  r_shift <- sigma_hat * qskt(0.5, df = v_hat, gamma = gamma_hat)
 } else {
-  # When degrees of freedom <= 1, expectation does not exist
+  # When degrees of freedom <= 1, the distribution exhibits extreme heavy tails.
+  # Fallback to 0 to prevent overly aggressive and unstable shifts.
   r_shift <- 0
 }
 
