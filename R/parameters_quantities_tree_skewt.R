@@ -12,7 +12,7 @@
 #' 
 #' @export
 skewt_parameter_update <- function(x, gamma2, v, d = 0.1, 
-                                   alpha_gamma = 2, beta_gamma = 1, 
+                                   alpha_gamma = 0.5, beta_gamma = 0.318, 
                                    lambda, sigma_alpha, sigma_beta) {
   n <- length(x)
   
