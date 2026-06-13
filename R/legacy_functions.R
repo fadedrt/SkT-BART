@@ -1,18 +1,14 @@
-# ==============================================================================
 # Legacy Pure-R Implementation of SkT-BART
-# ==============================================================================
 #
-# This file contains the original pure-R implementation of SkT-BART.
+# This file contains a transparent pure-R implementation of SkT-BART
+# retained for reproducibility and runtime comparison.
 #
-# The sampler updates tree structures using BART-style local moves
-# (grow, prune, and change) and proposes terminal-node parameters
-# using a Laplace approximation.
+# The implementation uses BART-style local tree moves (grow, prune,
+# and change) and a Laplace-based proposal correction for terminal-node
+# parameters.
 #
-# This implementation is retained for reproducibility and comparison
-# purposes. For routine use, the Rcpp-accelerated implementation
-# provided by `sktbart()` is recommended.
-#
-# ==============================================================================
+# For routine use, the Rcpp-accelerated implementation provided by
+# `sktbart()` is recommended.
 
 
 # ------------------------------------------------------------------------------
@@ -183,6 +179,18 @@ sktbart_legacy <- function(
 }
 
 
+# ------------------------------------------------------------------------------
+# Identify invalid terminal nodes under factor-splitting constraints
+#
+# This helper checks whether any terminal node violates the predefined
+# factor-variable splitting rule. For each terminal node, it collects the
+# splitting variables used along its ancestor path and compares them with
+# `aux_factor_var`.
+#
+# Returns a numeric vector of terminal-node IDs that should be treated as
+# invalid. If no constraint is supplied, or if the tree is a stump, it returns
+# an empty numeric vector.
+# ------------------------------------------------------------------------------
 get_invalid_leaf_ids_legacy <- function(tree, common_vars = NULL, aux_factor_var = NULL) {
   terminal_nodes <- as.numeric(which(tree$tree_matrix[, "terminal"] == 1))
   if (nrow(tree$tree_matrix) == 1 || is.null(aux_factor_var) || length(aux_factor_var) == 0) {
@@ -204,16 +212,15 @@ get_invalid_leaf_ids_legacy <- function(tree, common_vars = NULL, aux_factor_var
 }
 
                              
-# ------------------------------------------------------------------------------
-# Joint tree-leaf Metropolis-Hastings update (legacy version)
+# Joint tree-leaf update (legacy pure-R version)
 #
-# A candidate tree structure is generated using standard BART moves.
-# Conditional on the proposed tree, terminal-node parameters are
-# proposed from a Laplace-based Gaussian proposal distribution.
+# A candidate tree structure is generated using standard BART local moves.
+# Conditional on the proposed tree, terminal-node parameters are proposed
+# from a Laplace-based Gaussian proposal distribution.
 #
-# The resulting tree-leaf state is accepted or rejected using a
-# Metropolis-Hastings step.
-# ------------------------------------------------------------------------------
+# The acceptance ratio evaluates the joint skew-t posterior kernel and
+# includes the forward/reverse Laplace proposal-density correction for
+# terminal-node parameters.
                              
 joint_update_tree_leaf_legacy <- function(curr_tree, R, X, lambda, gamma2, sigma2,
                                           sigma2_mu, alpha, beta, node_min_size, s,
