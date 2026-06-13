@@ -1,107 +1,120 @@
-#' @title Skew-t Bayesian Additive Regression Trees (SkTBART)
-#' @description 
-#' Complete Pure R implementation of the legacy SkTBART algorithm. 
-#' NOTE: This version does NOT use C++ acceleration (Pure R implementation).
-#' It handles non-conjugate Skew-t error distributions via Laplace approximations 
-#' to robustly model data with outliers and asymmetric residuals.
-
-
 # ==============================================================================
-# 1. MAIN MODEL FITTING FUNCTION
+# Legacy Pure-R Implementation of SkT-BART
+# ==============================================================================
+#
+# This file contains the original pure-R implementation of SkT-BART.
+#
+# The sampler updates tree structures using BART-style local moves
+# (grow, prune, and change) and proposes terminal-node parameters
+# using a Laplace approximation.
+#
+# This implementation is retained for reproducibility and comparison
+# purposes. For routine use, the Rcpp-accelerated implementation
+# provided by `sktbart()` is recommended.
+#
 # ==============================================================================
 
-#' @export
+
+# ------------------------------------------------------------------------------
+# Main legacy SkT-BART sampler
+#
+# Pure-R implementation used in the early development stage.
+# Stores posterior samples of trees, error-distribution parameters,
+# fitted values, and variable inclusion statistics.
+#
+# Recommended only for reproducibility and runtime comparisons.
+# ------------------------------------------------------------------------------
+
 sktbart_legacy <- function(
     y, x, sparse = FALSE, ntrees = 50, node_min_size = 5, gamma2 = 1,
     alpha = 0.95, beta = 2, lambda = NULL, d = 0.1, v = 30, mu_mu = 0,
     sigma2_mu = NULL, sigma2 = 1, b = 0.5, nburn = 1000, npost = 1000,
     nthin = 1, sigma_alpha = 1.5
 ) {
-  
-  if (is.null(sigma2_mu)) sigma2_mu <- 0.5^2 / ntrees  
+  if (is.null(sigma2_mu)) sigma2_mu <- 0.5^2 / ntrees
   if (is.null(lambda)) lambda <- rep(1, length(y))
   
   aux_identify_factor_variables <- NULL
-  common_variables              <- NULL
+  common_variables <- NULL
   
   total_iterations <- nburn + npost * nthin
   n <- length(y)
   p <- ncol(x)
   
-  tree_store      <- vector('list', npost)
-  gamma2_store    <- rep(NA, npost)
-  sigma2_store    <- rep(NA, npost)
-  y_hat_store     <- matrix(NA, ncol = n, nrow = npost)
-  bart_store      <- matrix(NA, ncol = n, nrow = npost)
-  var_count       <- rep(0, p)
+  tree_store <- vector("list", npost)
+  gamma2_store <- rep(NA_real_, npost)
+  sigma2_store <- rep(NA_real_, npost)
+  y_hat_store <- matrix(NA_real_, ncol = n, nrow = npost)
+  bart_store <- matrix(NA_real_, ncol = n, nrow = npost)
+  var_count <- rep(0, p)
   var_count_store <- matrix(0, ncol = p, nrow = npost)
-  s_prob_store    <- matrix(0, ncol = p, nrow = npost)
-  v_store         <- rep(NA, npost)
-  lambda_store    <- matrix(NA, ncol = n, nrow = npost)
+  s_prob_store <- matrix(0, ncol = p, nrow = npost)
+  v_store <- rep(NA_real_, npost)
+  lambda_store <- matrix(NA_real_, ncol = n, nrow = npost)
+  tree_accept_store <- rep(NA_real_, npost)
   
   tree_fits_cache <- matrix(0, ncol = ntrees, nrow = n)
   
   y_mean <- mean(y)
-  y_sd   <- sd(y) 
-  y_scale <- if(y_sd > 1e-8) (y - y_mean) / y_sd else (y - y_mean)
+  y_sd <- sd(y)
+  y_scale <- if (y_sd > 1e-8) (y - y_mean) / y_sd else (y - y_mean)
   
-  lm_fit       <- lm(y_scale ~ as.matrix(x))
+  lm_fit <- lm(y_scale ~ as.matrix(x))
   sigma_hat_sq <- var(lm_fit$residuals)
-  sigma_beta   <- 0.292 * sigma_hat_sq  
+  sigma_beta <- 0.292 * sigma_hat_sq
   
   s <- rep(1 / p, p)
-  
-  # Initialize stump (Assumes create_stump is available in your env)
   curr_trees <- create_stump(num_trees = ntrees, y = y_scale, X = x)
-  new_trees  <- curr_trees
-  yhat_bart  <- get_predictions(curr_trees, x, single_tree = (ntrees == 1))
+  yhat_bart <- get_predictions(curr_trees, x, single_tree = (ntrees == 1))
   
   pb <- utils::txtProgressBar(min = 1, max = total_iterations, style = 3, width = 60)
   
   for (i in seq_len(total_iterations)) {
     utils::setTxtProgressBar(pb, i)
+    accepted_this_iter <- 0L
     
     for (j in seq_len(ntrees)) {
       current_partial_residuals <- y_scale - yhat_bart + tree_fits_cache[, j]
       
-      move_type <- sample_move(curr_trees[[j]], i, nburn)
-      
-      # Assumes update_tree is available in your env
-      new_trees[[j]] <- update_tree(
-        y = current_partial_residuals, X = x, type = move_type, 
-        curr_tree = curr_trees[[j]], node_min_size = node_min_size, 
-        s = s, common_vars = common_variables, aux_factor_var = aux_identify_factor_variables
+      upd <- joint_update_tree_leaf_legacy(
+        curr_tree = curr_trees[[j]],
+        R = current_partial_residuals,
+        X = x,
+        lambda = lambda,
+        gamma2 = gamma2,
+        sigma2 = sigma2,
+        sigma2_mu = sigma2_mu,
+        alpha = alpha,
+        beta = beta,
+        node_min_size = node_min_size,
+        s = s,
+        iter = i,
+        nburn = nburn,
+        common_vars = common_variables,
+        aux_factor_var = aux_identify_factor_variables
       )
       
-      l_old <- tree_full_skewt_laplace_legacy(
-        tree = curr_trees[[j]], R = current_partial_residuals, lambda = lambda, 
-        sigma2 = sigma2, sigma2_mu = sigma2_mu, gamma2 = gamma2,
-        common_vars = common_variables, aux_factor_var = aux_identify_factor_variables
-      ) + get_tree_prior(curr_trees[[j]], alpha, beta, common_variables)
+      curr_trees[[j]] <- upd$tree
+      accepted_this_iter <- accepted_this_iter + as.integer(upd$accepted)
       
-      l_new <- tree_full_skewt_laplace_legacy(
-        tree = new_trees[[j]], R = current_partial_residuals, lambda = lambda, 
-        sigma2 = sigma2, sigma2_mu = sigma2_mu, gamma2 = gamma2,
-        common_vars = common_variables, aux_factor_var = aux_identify_factor_variables
-      ) + get_tree_prior(new_trees[[j]], alpha, beta, common_variables)
-      
-      ratio <- if (isTRUE(new_trees[[j]]$ForceStump)) -Inf else l_new - l_old
-      
-      if (ratio > 0 || ratio > log(runif(1))) {
-        curr_trees[[j]] <- new_trees[[j]]
-        if (move_type == 'change') {
-          var_count[curr_trees[[j]]$var[1]] <- var_count[curr_trees[[j]]$var[1]] + 1
-          var_count[curr_trees[[j]]$var[2]] <- var_count[curr_trees[[j]]$var[2]] - 1
+      if (upd$accepted) {
+        if (upd$move_type == "change" && length(curr_trees[[j]]$var) >= 2) {
+          new_var <- curr_trees[[j]]$var[1]
+          old_var <- curr_trees[[j]]$var[2]
+          if (new_var %in% seq_len(p)) var_count[new_var] <- var_count[new_var] + 1
+          if (old_var %in% seq_len(p)) var_count[old_var] <- var_count[old_var] - 1
         }
-        if (move_type == 'grow')  var_count[curr_trees[[j]]$var] <- var_count[curr_trees[[j]]$var] + 1
-        if (move_type == 'prune') var_count[curr_trees[[j]]$var] <- var_count[curr_trees[[j]]$var] - 1
+        if (upd$move_type == "grow" && length(curr_trees[[j]]$var) > 0) {
+          for (vv in curr_trees[[j]]$var) {
+            if (vv %in% seq_len(p)) var_count[vv] <- var_count[vv] + 1
+          }
+        }
+        if (upd$move_type == "prune" && length(curr_trees[[j]]$var) > 0) {
+          for (vv in curr_trees[[j]]$var) {
+            if (vv %in% seq_len(p)) var_count[vv] <- var_count[vv] - 1
+          }
+        }
       }
-      
-      curr_trees[[j]] <- simulate_mu_skew_laplace_legacy(
-        tree = curr_trees[[j]], R = current_partial_residuals, lambda1 = lambda, 
-        gamma2 = gamma2, sigma2 = sigma2, sigma2_mu = sigma2_mu,
-        common_vars = common_variables, aux_factor_var = aux_identify_factor_variables
-      )
       
       current_fit <- get_predictions(curr_trees[j], x, single_tree = TRUE)
       yhat_bart <- yhat_bart - tree_fits_cache[, j] + current_fit
@@ -110,135 +123,311 @@ sktbart_legacy <- function(
     
     current_residuals <- y_scale - yhat_bart
     
-    # Assumes skewt_parameter_update is available in your env
     error_params <- skewt_parameter_update(
-      current_residuals, gamma2 = gamma2, v = v, d = d, 
-      lambda = lambda, sigma_alpha = sigma_alpha, sigma_beta = sigma_beta
+      current_residuals,
+      gamma2 = gamma2,
+      v = v,
+      d = d,
+      lambda = lambda,
+      sigma_alpha = sigma_alpha,
+      sigma_beta = sigma_beta
     )
     
-    v      <- error_params$v
+    v <- error_params$v
     sigma2 <- error_params$sigma2
     lambda <- error_params$lambda
     gamma2 <- error_params$gamma2
     
-    if(isTRUE(sparse) && i > floor(total_iterations * 0.1)){
+    if (isTRUE(sparse) && i > floor(total_iterations * 0.1)) {
       s <- update_s_(var_count, p, 1)
     }
     
     if ((i > nburn) && ((i - nburn) %% nthin == 0)) {
       idx <- (i - nburn) / nthin
-      tree_store[[idx]]      <- curr_trees
-      sigma2_store[idx]      <- sigma2
-      y_hat_store[idx, ]     <- yhat_bart
-      bart_store[idx, ]      <- yhat_bart
+      tree_store[[idx]] <- curr_trees
+      sigma2_store[idx] <- sigma2
+      y_hat_store[idx, ] <- yhat_bart
+      bart_store[idx, ] <- yhat_bart
       var_count_store[idx, ] <- var_count
-      s_prob_store[idx, ]    <- s
-      lambda_store[idx, ]    <- lambda
-      v_store[idx]           <- v
-      gamma2_store[idx]      <- gamma2
+      s_prob_store[idx, ] <- s
+      lambda_store[idx, ] <- lambda
+      v_store[idx] <- v
+      gamma2_store[idx] <- gamma2
+      tree_accept_store[idx] <- accepted_this_iter / ntrees
     }
   }
   
   close(pb)
-  cat('\n MCMC Sampling Complete. \n')
+  cat("\n MCMC Sampling Complete. \n")
   
   results <- list(
-    trees            = tree_store,
-    sigma2           = sigma2_store * y_sd^2,
-    y_hat            = y_hat_store * y_sd + y_mean,
-    bart_hat         = bart_store * y_sd + y_mean,
-    v                = v_store,
-    gamma2           = gamma2_store,
-    npost            = npost,
-    nburn            = nburn,
-    ntrees           = ntrees,
-    y_mean           = y_mean,
-    y_sd             = y_sd,
-    var_count_store  = var_count_store,
+    trees = tree_store,
+    sigma2 = sigma2_store * y_sd^2,
+    y_hat = y_hat_store * y_sd + y_mean,
+    bart_hat = bart_store * y_sd + y_mean,
+    v = v_store,
+    gamma2 = gamma2_store,
+    npost = npost,
+    nburn = nburn,
+    ntrees = ntrees,
+    y_mean = y_mean,
+    y_sd = y_sd,
+    var_count_store = var_count_store,
     variable_weights = s_prob_store,
-    lambda           = lambda_store
+    lambda = lambda_store,
+    tree_accept_rate = tree_accept_store
   )
   
   class(results) <- "sktbart"
-  return(results)
+  results
 }
 
 
-# ==============================================================================
-# 2. LAPLACE APPROXIMATION LIKELIHOOD & SAMPLING
-# ==============================================================================
+get_invalid_leaf_ids_legacy <- function(tree, common_vars = NULL, aux_factor_var = NULL) {
+  terminal_nodes <- as.numeric(which(tree$tree_matrix[, "terminal"] == 1))
+  if (nrow(tree$tree_matrix) == 1 || is.null(aux_factor_var) || length(aux_factor_var) == 0) {
+    return(numeric(0))
+  }
+  terminal_ancestors <- get_ancestors(tree)
+  if (is.null(terminal_ancestors) || nrow(terminal_ancestors) == 0) {
+    return(numeric(0))
+  }
+  
+  ancestor_table <- table(terminal_ancestors[, 1], terminal_ancestors[, 2])
+  invalid <- numeric(0)
+  for (k in seq_len(nrow(ancestor_table))) {
+    ancestor_vars <- names(ancestor_table[k, ])[ancestor_table[k, ] != 0]
+    is_invalid <- any(vapply(aux_factor_var, function(z) all(ancestor_vars %in% z), logical(1)))
+    if (is_invalid) invalid <- c(invalid, as.numeric(rownames(ancestor_table)[k]))
+  }
+  intersect(terminal_nodes, invalid)
+}
 
-#' @export
-tree_full_skewt_laplace_legacy <- function(tree, R, lambda, sigma2, sigma2_mu, gamma2, 
-                                           common_vars, aux_factor_var) {
+                             
+# ------------------------------------------------------------------------------
+# Joint tree-leaf Metropolis-Hastings update (legacy version)
+#
+# A candidate tree structure is generated using standard BART moves.
+# Conditional on the proposed tree, terminal-node parameters are
+# proposed from a Laplace-based Gaussian proposal distribution.
+#
+# The resulting tree-leaf state is accepted or rejected using a
+# Metropolis-Hastings step.
+# ------------------------------------------------------------------------------
+                             
+joint_update_tree_leaf_legacy <- function(curr_tree, R, X, lambda, gamma2, sigma2,
+                                          sigma2_mu, alpha, beta, node_min_size, s,
+                                          iter, nburn,
+                                          common_vars = NULL, aux_factor_var = NULL) {
+  move_type <- sample_move(curr_tree, iter, nburn)
   
-  terminal_nodes <- as.numeric(which(tree$tree_matrix[, 'terminal'] == 1))
+  proposed_structure <- update_tree(
+    y = R,
+    X = X,
+    type = move_type,
+    curr_tree = curr_tree,
+    node_min_size = node_min_size,
+    s = s,
+    common_vars = common_vars,
+    aux_factor_var = aux_factor_var
+  )
   
-  if (nrow(tree$tree_matrix) != 1) {
-    terminal_ancestors <- get_ancestors(tree)
-    ancestor_table <- table(terminal_ancestors[, 1], terminal_ancestors[, 2])
+  old_prop <- leaf_laplace_proposal_legacy(
+    tree = curr_tree,
+    R = R,
+    lambda = lambda,
+    gamma2 = gamma2,
+    sigma2 = sigma2,
+    sigma2_mu = sigma2_mu,
+    common_vars = common_vars,
+    aux_factor_var = aux_factor_var,
+    draw = FALSE,
+    eval_tree = curr_tree
+  )
+  
+  new_prop <- leaf_laplace_proposal_legacy(
+    tree = proposed_structure,
+    R = R,
+    lambda = lambda,
+    gamma2 = gamma2,
+    sigma2 = sigma2,
+    sigma2_mu = sigma2_mu,
+    common_vars = common_vars,
+    aux_factor_var = aux_factor_var,
+    draw = TRUE
+  )
+  proposed_tree <- new_prop$tree
+  
+  log_target_old <- log_joint_tree_leaf_skewt_legacy(
+    tree = curr_tree,
+    R = R,
+    lambda = lambda,
+    gamma2 = gamma2,
+    sigma2 = sigma2,
+    sigma2_mu = sigma2_mu,
+    alpha = alpha,
+    beta = beta,
+    common_vars = common_vars,
+    aux_factor_var = aux_factor_var
+  )
+  
+  log_target_new <- log_joint_tree_leaf_skewt_legacy(
+    tree = proposed_tree,
+    R = R,
+    lambda = lambda,
+    gamma2 = gamma2,
+    sigma2 = sigma2,
+    sigma2_mu = sigma2_mu,
+    alpha = alpha,
+    beta = beta,
+    common_vars = common_vars,
+    aux_factor_var = aux_factor_var
+  )
+  log_ratio <- log_target_new - log_target_old +
+    old_prop$log_q - new_prop$log_q
+  
+  accepted <- FALSE
+  out_tree <- curr_tree
+  if (!isTRUE(proposed_tree$ForceStump) &&
+      is.finite(log_ratio) &&
+      (log_ratio >= 0 || log(runif(1)) < log_ratio)) {
+    out_tree <- proposed_tree
+    accepted <- TRUE
+  }
+  
+  list(tree = out_tree, accepted = accepted, move_type = move_type, log_ratio = log_ratio)
+}
+
+                            
+# ------------------------------------------------------------------------------
+# Laplace proposal construction for terminal-node parameters
+#
+# For each terminal node, a local mode is obtained using an
+# iteratively reweighted least squares (IRLS) approximation.
+# A Gaussian proposal is then constructed using the local curvature.
+#
+# This proposal is used only for generating candidate leaf parameters.
+# ------------------------------------------------------------------------------
+                             
+leaf_laplace_proposal_legacy <- function(tree, R, lambda, gamma2, sigma2, sigma2_mu,
+                                         common_vars = NULL, aux_factor_var = NULL,
+                                         draw = TRUE, eval_tree = NULL) {
+  if (is.null(eval_tree)) eval_tree <- tree
+  
+  leaf_ids <- sort(unique(tree$node_indices))
+  invalid_leaf_ids <- get_invalid_leaf_ids_legacy(tree, common_vars, aux_factor_var)
+  gamma2_safe <- max(gamma2, 1e-10)
+  
+  out_tree <- tree
+  out_tree$tree_matrix[, "mu"] <- NA
+  log_q <- 0
+  
+  for (leaf_id in leaf_ids) {
+    obs <- which(tree$node_indices == leaf_id)
     
-    terminals_invalid <- NULL
-    for (k in 1:nrow(ancestor_table)) {
-      ancestor_vars <- names(ancestor_table[k, ])[ancestor_table[k, ] != 0]
-      is_invalid <- any(sapply(aux_factor_var, function(x) all(ancestor_vars %in% x)))
-      if (is_invalid) {
-        terminals_invalid[k] <- rownames(ancestor_table)[k]
+    if (leaf_id %in% invalid_leaf_ids) {
+      mu_value <- 0
+      out_tree$tree_matrix[leaf_id, "mu"] <- 0
+      next
+    }
+    
+    if (length(obs) == 0) {
+      mu_hat <- 0
+      laplace_var <- sigma2_mu
+    } else {
+      R_leaf <- R[obs]
+      lambda_leaf <- lambda[obs]
+      ok <- is.finite(R_leaf) & is.finite(lambda_leaf)
+      R_leaf <- R_leaf[ok]
+      lambda_leaf <- lambda_leaf[ok]
+      
+      if (length(R_leaf) == 0) {
+        mu_hat <- 0
+        laplace_var <- sigma2_mu
+      } else {
+        mu_hat <- sum(lambda_leaf * R_leaf) /
+          (sum(lambda_leaf) + sigma2 / sigma2_mu)
+        
+        for (iter in seq_len(10)) {
+          mu_old <- mu_hat
+          w <- ifelse(R_leaf > mu_hat, 1 / gamma2_safe, gamma2_safe) * lambda_leaf
+          mu_hat <- sum(w * R_leaf) / (sum(w) + sigma2 / sigma2_mu)
+          if (!is.finite(mu_hat)) mu_hat <- mu_old
+          if (abs(mu_hat - mu_old) < 1e-4) break
+        }
+        
+        w_final <- ifelse(R_leaf > mu_hat, 1 / gamma2_safe, gamma2_safe) * lambda_leaf
+        laplace_var <- sigma2 / (sum(w_final) + sigma2 / sigma2_mu)
       }
     }
-    terminals_invalid <- as.numeric(terminals_invalid[!is.na(terminals_invalid)])
-  } else {
-    terminals_invalid <- 0
+    
+    laplace_sd <- sqrt(max(laplace_var, 1e-14))
+    if (draw) {
+      mu_value <- rnorm(1, mean = mu_hat, sd = laplace_sd)
+      if (!is.finite(mu_value)) mu_value <- mu_hat
+    } else {
+      mu_value <- eval_tree$tree_matrix[leaf_id, "mu"]
+      if (!is.finite(mu_value)) mu_value <- mu_hat
+    }
+    
+    out_tree$tree_matrix[leaf_id, "mu"] <- mu_value
+    log_q <- log_q + dnorm(mu_value, mean = mu_hat, sd = laplace_sd, log = TRUE)
   }
   
-  sigma2_mu_named <- rep(sigma2_mu, length(terminal_nodes))
-  names(sigma2_mu_named) <- as.character(terminal_nodes)
-  if (length(terminals_invalid) > 0 && any(terminals_invalid != 0)) {
-    sigma2_mu_named[as.character(terminals_invalid)] <- 0
-  }
-  
-  leaf_ids <- as.character(tree$node_indices)
-  
-  mu_hat <- rep(0, length(R))  
-  tol <- 1e-4
-  max_iter <- 10  
-  
-  for (iter in 1:max_iter) {
-    mu_old <- mu_hat
-    C_i_iter <- ifelse(R > mu_hat, 1 / gamma2, gamma2)
-    W_i_iter <- C_i_iter * lambda
-    
-    S_W_leaf  <- tapply(W_i_iter, leaf_ids, sum)
-    S_WR_leaf <- tapply(W_i_iter * R, leaf_ids, sum)
-    
-    sigma2_mu_j <- sigma2_mu_named[names(S_W_leaf)]
-    denom_mu <- S_W_leaf + (sigma2 / sigma2_mu_j)
-    denom_mu[sigma2_mu_j == 0] <- Inf 
-    
-    mu_mode_leaf <- S_WR_leaf / denom_mu
-    mu_hat <- as.numeric(mu_mode_leaf[leaf_ids])
-    
-    if (max(abs(mu_hat - mu_old), na.rm = TRUE) < tol) break
-  }
-  
-  C_i <- ifelse(R > mu_hat, 1 / gamma2, gamma2)
-  W_i <- C_i * lambda
-  
-  S_W   <- tapply(W_i, leaf_ids, sum)
-  S_WR  <- tapply(W_i * R, leaf_ids, sum)
-  S_WR2 <- tapply(W_i * R^2, leaf_ids, sum)
-  
-  sigma_mu_j_final <- sigma2_mu_named[names(S_W)]
-  
-  denom <- S_W * sigma_mu_j_final + sigma2
-  term1 <- log(sigma2) - log(denom) 
-  term2 <- (sigma_mu_j_final * S_WR^2) / (sigma2 * denom)
-  term3 <- - S_WR2 / sigma2  
-  
-  return(0.5 * sum(term1 + term2 + term3))
+  list(tree = out_tree, log_q = log_q)
 }
 
-#' @export
+
+# ------------------------------------------------------------------------------
+# Joint posterior kernel evaluation
+#
+# Computes the unnormalized joint posterior kernel for a tree and its
+# terminal-node parameters under the skew-t likelihood and Gaussian
+# leaf prior.
+#
+# Used in the Metropolis-Hastings acceptance ratio.
+# ------------------------------------------------------------------------------
+
+log_joint_tree_leaf_skewt_legacy <- function(tree, R, lambda, gamma2, sigma2, sigma2_mu,
+                                             alpha, beta,
+                                             common_vars = NULL, aux_factor_var = NULL) {
+  terminal_nodes <- as.numeric(which(tree$tree_matrix[, "terminal"] == 1))
+  invalid_leaf_ids <- get_invalid_leaf_ids_legacy(tree, common_vars, aux_factor_var)
+  gamma2_safe <- max(gamma2, 1e-10)
+  
+  log_lik <- 0
+  log_mu_prior <- 0
+  
+  for (leaf_id in terminal_nodes) {
+    mu_leaf <- tree$tree_matrix[leaf_id, "mu"]
+    if (!is.finite(mu_leaf)) return(-Inf)
+    
+    if (leaf_id %in% invalid_leaf_ids) {
+      if (abs(mu_leaf) > 1e-12) return(-Inf)
+    } else {
+      log_mu_prior <- log_mu_prior + dnorm(mu_leaf, 0, sqrt(sigma2_mu), log = TRUE)
+    }
+    
+    obs <- which(tree$node_indices == leaf_id)
+    if (length(obs) > 0) {
+      resid <- R[obs] - mu_leaf
+      c_i <- ifelse(R[obs] >= mu_leaf, 1 / gamma2_safe, gamma2_safe)
+      log_lik <- log_lik - 0.5 * sum(lambda[obs] * c_i * resid^2) / sigma2
+    }
+  }
+  
+  log_lik + log_mu_prior + get_tree_prior(tree, alpha, beta, common_vars)
+}
+
+                             
+# ------------------------------------------------------------------------------
+# Legacy leaf-parameter updater
+#
+# Earlier Laplace-based leaf update routine retained for reference.
+# Superseded by the joint tree-leaf proposal mechanism implemented in
+# `joint_update_tree_leaf_legacy()`.
+# ------------------------------------------------------------------------------
+
 simulate_mu_skew_laplace_legacy <- function(tree, R, lambda1, gamma2, sigma2, sigma2_mu, 
                                             common_vars, aux_factor_var) {
   
@@ -310,5 +499,7 @@ simulate_mu_skew_laplace_legacy <- function(tree, R, lambda1, gamma2, sigma2, si
   tree$tree_matrix[which_terminal_no_double_split, 'mu'] <- 0 
   
   return(tree)
+
+                                             
 }
 
